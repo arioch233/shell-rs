@@ -20,7 +20,19 @@ on:
       - "Cargo.lock"
       - "rust-toolchain.toml"
       - ".github/workflows/shells.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/terminal/**"
+      - "src/testing.rs"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".github/workflows/shells.yml"
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   shells:

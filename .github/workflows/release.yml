@@ -39,6 +39,8 @@ env:
 
 jobs:
   verify:
+    # Fork 仅维护源码，原作者的签名和更新渠道不可复用
+    if: github.repository == 'since2006/shell-rs'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
