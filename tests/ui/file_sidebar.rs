@@ -161,7 +161,10 @@ async fn files_open_on_the_terminals_own_connection(cx: &mut TestAppContext) {
         let panel = sidebar(&fixture, INITIAL_WEB_TERMINAL, cx).unwrap();
         let panel = panel.read(cx);
         assert!(panel.is_sidebar());
-        assert_eq!(panel.remote().read(cx).column_names(cx), ["名称", "大小"]);
+        assert_eq!(
+            panel.remote().read(cx).column_names(cx),
+            ["名称", "大小", "修改时间", "类型"]
+        );
         // Downloads go to Downloads, and the folder is never listed.
         assert_eq!(panel.local().read(cx).path(), "/local/tester/Downloads");
     });
@@ -177,6 +180,176 @@ async fn files_open_on_the_terminals_own_connection(cx: &mut TestAppContext) {
     wait_for_path(cx, fixture.handle, FILES, "/home/tester").await;
     assert_eq!(*fixture.sftp.on_terminal.lock().unwrap(), 1);
     assert_eq!(fixture.terminals.sftp_opens(), [1]);
+}
+
+#[gpui_kit::test]
+async fn files_drag_out_downloads_on_its_terminal_and_cancels_on_disconnect(
+    cx: &mut TestAppContext,
+) {
+    let fixture = open(cx, FakeSftpProvider::default());
+    let native = Arc::new(FakeFileDrag::default());
+    cx.update(|cx| cx.set_global(FileDragService::new(native.clone())));
+    show_files(cx, &fixture, INITIAL_WEB_TERMINAL, FILES).await;
+    in_frame(cx, fixture.handle, |window, cx| {
+        window
+            .within(("remote-pane", FILES))
+            .click("name:文件 甲.txt", cx);
+        modified_click(
+            window,
+            ("remote-pane", FILES),
+            "name:目录",
+            gpui_kit::Modifiers::secondary_key(),
+            cx,
+        );
+    });
+    drag_remote_file_out(cx, fixture.handle, FILES, &native);
+    assert_eq!(
+        *native.files.lock().unwrap(),
+        [
+            PromisedFile::new("目录", true),
+            PromisedFile::new("文件 甲.txt", false)
+        ]
+    );
+    assert!(fixture.sftp.downloads.lock().unwrap().is_empty());
+    // 拖出后目录变化，系统延迟发来的落点仍对应开始拖动时的来源
+    in_frame(cx, fixture.handle, |window, cx| {
+        window.dispatch_action(
+            Box::new(ExplorerAction::new(
+                ExplorerId(FILES),
+                ExplorerCommand::Navigate {
+                    remote: true,
+                    path: "/srv".into(),
+                },
+            )),
+            cx,
+        );
+    });
+    wait_for_path(cx, fixture.handle, FILES, "/srv").await;
+    let reply = native.drop_file(1, "/tmp/Finder 落点/文件 甲 2.txt");
+    cx.wait_for(
+        fixture.handle.into(),
+        Duration::from_secs(2),
+        |window, cx| {
+            window.render_frame(cx);
+            !fixture.sftp.downloads.lock().unwrap().is_empty()
+        },
+    )
+    .await;
+    {
+        let downloads = fixture.sftp.downloads.lock().unwrap();
+        assert_eq!(downloads[0].sources()[0].as_str(), REMOTE_FILE);
+        assert_eq!(
+            downloads[0].destination().to_str(),
+            Some("/tmp/Finder 落点")
+        );
+        assert_eq!(downloads[0].target_name(), Some("文件 甲 2.txt"));
+    }
+    assert_eq!(*fixture.sftp.on_terminal.lock().unwrap(), 1);
+    assert!(fixture.local.listed.lock().unwrap().is_empty());
+    in_frame(cx, fixture.handle, |window, cx| {
+        assert!(window.try_find("download-confirm").is_none());
+        assert!(window.find("transfer-status").visible());
+        window.dispatch_action(
+            Box::new(DisconnectTerminal(RemoteTerminalId(INITIAL_WEB_TERMINAL))),
+            cx,
+        );
+    });
+    wait_for_state(cx, &fixture, ConnectionState::Disconnected).await;
+    assert!(reply.try_recv().unwrap().is_err());
+    assert!(
+        native
+            .drop_file(0, "/tmp/late-folder")
+            .try_recv()
+            .unwrap()
+            .is_err()
+    );
+}
+
+#[gpui_kit::test]
+async fn files_sort_by_modified_time_and_type_in_the_narrow_sidebar(cx: &mut TestAppContext) {
+    let provider = FakeSftpProvider::with_files(&[
+        ("/srv/a.log", b"a"),
+        ("/srv/b.txt", b"b"),
+        ("/srv/c.json", b"c"),
+        ("/srv/folder/inside", b"d"),
+    ]);
+    provider.change_file("/srv/a.log", b"a");
+    provider.change_file("/srv/a.log", b"a");
+    provider.change_file("/srv/c.json", b"c");
+    let fixture = open(cx, provider);
+    show_files(cx, &fixture, INITIAL_WEB_TERMINAL, FILES).await;
+    in_frame(cx, fixture.handle, |window, cx| {
+        window.dispatch_action(
+            Box::new(ExplorerAction::new(
+                ExplorerId(FILES),
+                ExplorerCommand::Navigate {
+                    remote: true,
+                    path: "/srv".into(),
+                },
+            )),
+            cx,
+        );
+    });
+    wait_for_path(cx, fixture.handle, FILES, "/srv").await;
+    let names = |cx: &mut TestAppContext| {
+        cx.run_until_parked();
+        cx.update(|cx| {
+            sidebar(&fixture, INITIAL_WEB_TERMINAL, cx)
+                .unwrap()
+                .read(cx)
+                .remote()
+                .read(cx)
+                .entries(cx)
+                .into_iter()
+                .map(|entry| entry.name.to_string())
+                .collect::<Vec<_>>()
+        })
+    };
+    let click_column = |cx: &mut TestAppContext, column: &'static str| {
+        in_frame(cx, fixture.handle, |window, cx| {
+            window.within(("remote-pane", FILES)).click(column, cx);
+        });
+    };
+    assert_eq!(names(cx), ["..", "folder", "a.log", "b.txt", "c.json"]);
+    in_frame(cx, fixture.handle, |window, cx| {
+        window
+            .within(("remote-pane", FILES))
+            .click("name:a.log", cx);
+        // 在窄侧栏里通过横向滚动访问新增列，不扩大整个面板
+        let pane = window.find(("remote-pane", FILES)).bounds();
+        window.dispatch_event(
+            gpui_kit::ScrollWheelEvent {
+                position: pane.center(),
+                delta: gpui_kit::ScrollDelta::Lines(point(-30., 0.)),
+                modifiers: gpui_kit::Modifiers::default(),
+                touch_phase: gpui_kit::TouchPhase::Moved,
+            }
+            .to_platform_input(),
+            cx,
+        );
+    });
+    click_column(cx, "column:modified");
+    assert_eq!(names(cx), ["..", "folder", "a.log", "c.json", "b.txt"]);
+    in_frame(cx, fixture.handle, |window, cx| {
+        window.within(("remote-pane", FILES)).click("refresh", cx);
+    });
+    settle(cx);
+    assert_eq!(names(cx), ["..", "folder", "a.log", "c.json", "b.txt"]);
+    click_column(cx, "column:modified");
+    assert_eq!(names(cx), ["..", "folder", "b.txt", "c.json", "a.log"]);
+    click_column(cx, "column:modified");
+    assert_eq!(names(cx), ["..", "folder", "a.log", "b.txt", "c.json"]);
+    click_column(cx, "column:type");
+    assert_eq!(names(cx), ["..", "folder", "b.txt", "a.log", "c.json"]);
+    click_column(cx, "column:type");
+    assert_eq!(names(cx), ["..", "folder", "c.json", "a.log", "b.txt"]);
+    cx.update(|cx| {
+        let panel = sidebar(&fixture, INITIAL_WEB_TERMINAL, cx).unwrap();
+        assert_eq!(
+            panel.read(cx).remote().read(cx).selected_names(cx),
+            ["a.log"]
+        );
+    });
 }
 
 #[gpui_kit::test]

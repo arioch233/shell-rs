@@ -13,7 +13,6 @@ use gpui_kit::*;
 use crate::app::{CatalogIcon, NewSavedTerminal, NewTerminalGroup, ToggleTool, ToolKind};
 use crate::docker::{Container, DockerObject, DockerPanel, ObjectSummary};
 use crate::explorer::ExplorerPanel;
-use crate::gpu::GpuPanel;
 use crate::history::HistoryPanel;
 use crate::host::{HostId, HostOs, HostStore, SavedTerminalId, SnippetCategoryId};
 use crate::i18n::t;
@@ -136,7 +135,6 @@ pub struct ToolSidebar {
     processes: Entity<ProcessPanel>,
     netstat: Entity<NetstatPanel>,
     dispatch: FocusHandle,
-    gpu: Entity<GpuPanel>,
     projects: Entity<ProjectPanel>,
     focus_handle: FocusHandle,
 }
@@ -154,7 +152,7 @@ impl ToolSidebar {
             tool: ToolKind::default(),
             target: None,
             shown: false,
-            monitor: cx.new(|_| MonitorPanel::new(dispatch.clone())),
+            monitor: cx.new(|cx| MonitorPanel::new(dispatch.clone(), window, cx)),
             projects: cx.new(|cx| ProjectPanel::new(store.clone(), dispatch.clone(), cx)),
             snippets: cx.new(|cx| SnippetPanel::new(store, dispatch.clone(), window, cx)),
             history: cx.new(|cx| HistoryPanel::new(dispatch.clone(), window, cx)),
@@ -165,10 +163,13 @@ impl ToolSidebar {
             services: cx.new(|cx| ServicePanel::new(dispatch.clone(), window, cx)),
             processes: cx.new(|cx| ProcessPanel::new(dispatch.clone(), window, cx)),
             netstat: cx.new(|cx| NetstatPanel::new(dispatch.clone(), window, cx)),
-            gpu: cx.new(|cx| GpuPanel::new(dispatch.clone(), cx)),
             dispatch,
             focus_handle: cx.focus_handle(),
         }
+    }
+
+    pub(crate) fn monitor(&self) -> Entity<MonitorPanel> {
+        self.monitor.clone()
     }
 
     pub fn tool(&self) -> ToolKind {
@@ -321,44 +322,77 @@ impl ToolSidebar {
 
     /// 进程管理's 刷新.
     pub fn refresh_processes(&mut self, cx: &mut Context<Self>) {
-        self.processes
-            .update(cx, |processes, cx| processes.refresh(cx));
-    }
-
-    /// Read the processes again in a moment, once one was told to end:
-    /// those of 进程管理, or of GPU/NPU when it is the one showing.
-    pub fn refresh_processes_soon(&mut self, cx: &mut Context<Self>) {
-        if self.tool == ToolKind::Gpu {
-            self.gpu.update(cx, |gpu, cx| gpu.refresh_soon(cx));
+        if self.tool == ToolKind::Monitor {
+            self.monitor.update(cx, |panel, cx| {
+                panel.refresh(Some(crate::monitor::CollectorDomain::Processes), cx)
+            });
         } else {
             self.processes
-                .update(cx, |processes, cx| processes.refresh_soon(cx));
+                .update(cx, |processes, cx| processes.refresh(cx));
+        }
+    }
+
+    pub(crate) fn process_domain(&self, cx: &App) -> Option<crate::monitor::CollectorDomain> {
+        (self.tool == ToolKind::Monitor).then(|| self.monitor.read(cx).process_domain())
+    }
+    pub(crate) fn refresh_process_target(
+        &mut self,
+        terminal: RemoteTerminalId,
+        generation: u64,
+        domain: Option<crate::monitor::CollectorDomain>,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(domain) = domain {
+            self.monitor.update(cx, |panel, cx| {
+                panel.refresh_target(terminal, generation, domain, cx)
+            });
+        } else if self.remote().is_some_and(|target| {
+            target.id == terminal
+                && target
+                    .view
+                    .upgrade()
+                    .is_some_and(|view| view.read(cx).generation(cx) == generation)
+        }) {
+            self.processes
+                .update(cx, |panel, cx| panel.refresh_soon(cx));
         }
     }
 
     /// GPU/NPU's 刷新.
     pub fn refresh_gpu(&mut self, cx: &mut Context<Self>) {
-        self.gpu.update(cx, |gpu, cx| gpu.refresh(cx));
+        self.monitor.update(cx, |panel, cx| {
+            panel.refresh(Some(crate::monitor::CollectorDomain::Accelerator), cx)
+        });
     }
 
     /// Unfold a device of GPU/NPU, or fold it away.
     pub fn toggle_gpu_device(&mut self, key: &str, cx: &mut Context<Self>) {
-        self.gpu.update(cx, |gpu, cx| gpu.toggle(key, cx));
+        self.monitor
+            .update(cx, |panel, cx| panel.toggle_gpu(key, cx));
     }
 
     /// GPU/NPU's 全部展开 and 全部收起.
     pub fn toggle_all_gpu_devices(&mut self, cx: &mut Context<Self>) {
-        self.gpu.update(cx, |gpu, cx| gpu.toggle_all(cx));
+        self.monitor
+            .update(cx, |panel, cx| panel.toggle_all_gpu(cx));
     }
 
     /// 进程管理's sort buttons.
     pub fn sort_processes(&mut self, by: ProcessSort, cx: &mut Context<Self>) {
-        self.processes
-            .update(cx, |processes, cx| processes.sort(by, cx));
+        if self.tool == ToolKind::Monitor {
+            self.monitor
+                .update(cx, |panel, cx| panel.sort_processes(by, cx));
+        } else {
+            self.processes
+                .update(cx, |processes, cx| processes.sort(by, cx));
+        }
     }
 
     /// A process of the host in front, as 进程管理 last showed it.
     pub fn process(&self, pid: u32, cx: &App) -> Option<Process> {
+        if self.tool == ToolKind::Monitor {
+            return self.monitor.read(cx).process(pid, cx);
+        }
         self.processes.read(cx).process(pid)
     }
 
@@ -366,8 +400,8 @@ impl ToolSidebar {
     /// question before ending it: as the tool showing listed it, 进程管理
     /// or GPU/NPU.
     pub fn process_label(&self, pid: u32, cx: &App) -> Option<(String, Option<String>)> {
-        if self.tool == ToolKind::Gpu {
-            return self.gpu.read(cx).process(pid);
+        if self.tool == ToolKind::Monitor {
+            return self.monitor.read(cx).process_label(pid, cx);
         }
         let process = self.process(pid, cx)?;
         Some((process.name, process.user))
@@ -375,6 +409,9 @@ impl ToolSidebar {
 
     /// The same with its family, for its details.
     pub fn process_details(&self, pid: u32, cx: &App) -> Option<ProcessDetails> {
+        if self.tool == ToolKind::Monitor {
+            return self.monitor.read(cx).process_details(pid, cx);
+        }
         self.processes.read(cx).details(pid)
     }
 
@@ -392,14 +429,13 @@ impl ToolSidebar {
                 panel.set_target(target.clone(), kubernetes, cx)
             });
         }
-        let (monitor, netstat, processes, services, docker, history, gpu, tmux) = (
+        let (monitor, netstat, processes, services, docker, history, tmux) = (
             showing(ToolKind::Monitor),
             showing(ToolKind::Connections),
             showing(ToolKind::Processes),
             showing(ToolKind::Services),
             showing(ToolKind::Docker),
             showing(ToolKind::History),
-            showing(ToolKind::Gpu),
             showing(ToolKind::Tmux),
         );
         self.history.update(cx, |panel, cx| {
@@ -418,8 +454,6 @@ impl ToolSidebar {
         self.processes.update(cx, |panel, cx| {
             panel.set_target(target.clone(), processes, cx)
         });
-        self.gpu
-            .update(cx, |panel, cx| panel.set_target(target.clone(), gpu, cx));
         self.netstat
             .update(cx, |panel, cx| panel.set_target(target, netstat, cx));
     }
@@ -514,7 +548,7 @@ impl Panel for ToolSidebar {
             })
     }
 
-    /// 项目's 新建 buttons, beside the 「…」 menu as the host list's are.
+    /// 当前工具的快捷入口，放在标题栏以保留内容区宽度
     fn toolbar_buttons(&mut self, _: &mut Window, _: &mut Context<Self>) -> Option<Vec<Button>> {
         if self.tool != ToolKind::Projects || self.target.is_none() {
             return None;
@@ -579,7 +613,7 @@ impl Render for ToolSidebar {
                     ToolKind::Processes => self.processes.clone().into_any_element(),
                     ToolKind::Connections => self.netstat.clone().into_any_element(),
                     ToolKind::Monitor => self.monitor.clone().into_any_element(),
-                    ToolKind::Gpu => self.gpu.clone().into_any_element(),
+                    ToolKind::Gpu => self.monitor.clone().into_any_element(),
                     ToolKind::Projects => self.projects.clone().into_any_element(),
                 };
                 sidebar.child(div().flex_1().min_h_0().child(panel))

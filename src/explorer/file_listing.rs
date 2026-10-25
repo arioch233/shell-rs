@@ -85,8 +85,7 @@ pub struct FileListing {
     show_hidden: bool,
     sort: Option<(usize, ColumnSort)>,
     side: PaneSide,
-    /// The right sidebar's narrow list: names and sizes, and rows that do
-    /// not drag out (see `set_compact`).
+    /// 右侧栏的紧凑文件列表，仅允许拖出到系统，避免使用其他面板的连接
     compact: bool,
     context: ListingContext,
 }
@@ -143,15 +142,19 @@ impl FileListing {
         }
     }
 
-    /// Fit the right sidebar: only names and sizes. Rows no longer drag
-    /// out: dropped on an SFTP tab's local pane, they would be fetched from
-    /// that tab's host, not this one.
+    /// 侧栏沿用表格的列宽调整与横向滚动，补齐时间和类型排序
     pub(super) fn set_compact(&mut self) {
         self.compact = true;
         self.columns = vec![
             name_column(px(200.)),
             Column::new("size", column_title("size"))
                 .width(px(88.))
+                .sortable(),
+            Column::new("modified", column_title("modified"))
+                .width(px(150.))
+                .sortable(),
+            Column::new("type", column_title("type"))
+                .width(px(100.))
                 .sortable(),
         ];
         self.sort = None;
@@ -264,21 +267,44 @@ impl FileListing {
             }),
             None => cell,
         };
-        if self.compact {
-            return cell;
-        }
         let paths = names.iter().map(|name| self.child_path(name));
         match self.side {
             PaneSide::Local => drag_files(
                 cell,
                 paths.map(PathBuf::from).collect(),
                 TransferDirection::Upload,
+                false,
             ),
             PaneSide::Remote => drag_files(
                 cell,
                 paths.collect::<Vec<String>>(),
                 TransferDirection::Download,
-            ),
+                self.compact,
+            )
+            .when_some(self.context.dispatch.clone(), |cell, dispatch| {
+                let explorer = self.context.explorer;
+                cell.on_mouse_down(MouseButton::Left, |_, window, cx| {
+                    crate::shared::file_drag::capture_mouse_down(window, cx);
+                })
+                .external_drag_payload(
+                    move |drag: &RemoteFilesDrag, window, cx| {
+                        // GPUI 在鼠标监听器结束后调用此回调，此处没有租用的列表实体
+                        // 同步派发让 AppKit 在当前拖拽事件内接管，不能推迟到抬键之后
+                        dispatch.dispatch_action(
+                            &ExplorerAction::new(
+                                explorer,
+                                ExplorerCommand::DragDownload {
+                                    paths: drag.paths.clone(),
+                                },
+                            ),
+                            window,
+                            cx,
+                        );
+                        // 系统文件承诺经动作处理器启动，不能把远端路径冒充本地文件
+                        None
+                    },
+                )
+            }),
         }
     }
 
@@ -635,6 +661,8 @@ fn name_column(width: Pixels) -> Column {
 pub(super) struct FilesDrag<P> {
     pub paths: Vec<P>,
     pub spot: DropSpot,
+    /// 侧边栏只能把来源交给自身的系统下载处理器
+    external_only: bool,
 }
 pub(super) type LocalFilesDrag = FilesDrag<PathBuf>;
 pub(super) type RemoteFilesDrag = FilesDrag<String>;
@@ -645,10 +673,12 @@ fn drag_files<P: 'static>(
     cell: Stateful<Div>,
     paths: Vec<P>,
     direction: TransferDirection,
+    external_only: bool,
 ) -> Stateful<Div> {
     let drag = FilesDrag {
         paths,
         spot: DropSpot::default(),
+        external_only,
     };
     cell.on_drag(drag, move |drag, _, _, cx| {
         cx.new(|_| FileDragPreview {
@@ -663,12 +693,18 @@ fn drag_files<P: 'static>(
 /// their drag so while the pointer is over it.
 pub(super) fn offer_drop<P: 'static>(element: Stateful<Div>) -> Stateful<Div> {
     element
-        .drag_over::<FilesDrag<P>>(|style, _, _, cx| style.bg(cx.theme().muted))
+        .drag_over::<FilesDrag<P>>(|style, drag, _, cx| {
+            if drag.external_only {
+                style
+            } else {
+                style.bg(cx.theme().muted)
+            }
+        })
         .on_drag_move(|event: &DragMoveEvent<FilesDrag<P>>, _, cx| {
-            event
-                .drag(cx)
-                .spot
-                .offer(event.event.position, event.bounds)
+            let drag = event.drag(cx);
+            if !drag.external_only {
+                drag.spot.offer(event.event.position, event.bounds);
+            }
         })
 }
 
@@ -704,6 +740,9 @@ pub(super) fn accept_drops(
                 send(ExplorerCommand::UploadPaths { paths, target }, window, cx)
             }),
         PaneSide::Local => element.on_drop(move |drag: &RemoteFilesDrag, window, cx| {
+            if drag.external_only {
+                return;
+            }
             let (paths, target) = (drag.paths.clone(), target.clone());
             send(ExplorerCommand::DownloadPaths { paths, target }, window, cx)
         }),

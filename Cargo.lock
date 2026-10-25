@@ -7794,6 +7794,7 @@ dependencies = [
  "async-channel",
  "async-io",
  "base64 0.22.1",
+ "block2 0.6.2",
  "chrono",
  "clap",
  "dirs 6.0.0",

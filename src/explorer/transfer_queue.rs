@@ -25,15 +25,28 @@ pub struct QueueId(pub u64);
 /// What a batch copies, as the user confirmed it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TransferJob {
-    Upload { paths: Vec<PathBuf>, target: String },
-    Download { paths: Vec<String>, target: String },
+    Upload {
+        paths: Vec<PathBuf>,
+        target: String,
+    },
+    Download {
+        paths: Vec<String>,
+        target: String,
+    },
+    /// 系统文件承诺指定完整落点，保留 Finder 处理重名后给出的文件名
+    DownloadToPath {
+        source: String,
+        target: String,
+    },
 }
 
 impl TransferJob {
     pub fn direction(&self) -> TransferDirection {
         match self {
             TransferJob::Upload { .. } => TransferDirection::Upload,
-            TransferJob::Download { .. } => TransferDirection::Download,
+            TransferJob::Download { .. } | TransferJob::DownloadToPath { .. } => {
+                TransferDirection::Download
+            }
         }
     }
 
@@ -63,6 +76,7 @@ impl TransferJob {
                     (path.clone(), folder)
                 })
                 .unzip(),
+            TransferJob::DownloadToPath { source, .. } => return source.clone(),
         };
         match (paths.as_slice(), folders.first()) {
             ([one], _) => one.clone(),
@@ -74,7 +88,9 @@ impl TransferJob {
     /// The 目标 column.
     pub fn target(&self) -> &str {
         match self {
-            TransferJob::Upload { target, .. } | TransferJob::Download { target, .. } => target,
+            TransferJob::Upload { target, .. }
+            | TransferJob::Download { target, .. }
+            | TransferJob::DownloadToPath { target, .. } => target,
         }
     }
 }

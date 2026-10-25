@@ -4,13 +4,14 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use super::model::{Device, GpuProcess, Health, Reading, Vendor};
+use super::model::{AscendMetrics, Device, GpuProcess, Health, QueryStatus, Reading, Vendor};
 use crate::i18n::t;
 
 /// The most seconds each tool gets before it is stopped. A GPU fallen off
 /// the bus can leave `nvidia-smi` waiting on the driver; three runs of it
 /// still end inside an exec's ten seconds.
 const TIMEOUT: u32 = 3;
+const TEGRA_WINDOW: u32 = 2;
 
 /// What `nvidia-smi` is asked of each GPU, in the order the CSV has it.
 const NVIDIA_FIELDS: &str = "index,uuid,name,pci.bus_id,driver_version,pstate,\
@@ -50,9 +51,27 @@ pub fn command() -> String {
          for p in $(printf \"%s\\n\" \"$out\" | cut -s -d, -f2); do \
          if test \"$p\" -gt 0 2>/dev/null; then pids=\"$pids,$p\"; fi; done; \
          fi; fi; \
+         if test -r /etc/nv_tegra_release && command -v tegrastats >/dev/null 2>&1 && command -v timeout >/dev/null 2>&1; then \
+         out=$(timeout -s KILL {TEGRA_WINDOW} tegrastats --interval 500 2>&1); s=$?; \
+         echo @@tegra; printf \"%s\\n\" \"$out\"; echo \"@@status $s\"; \
+         for p in /sys/class/devfreq/*gpu*/cur_freq; do if test -r \"$p\"; then echo @@tegra-frequency; $t head -c 128 \"$p\"; break; fi; done; \
+         fi; \
          if command -v npu-smi >/dev/null 2>&1; then \
          out=$($t npu-smi info 2>&1); s=$?; \
          echo @@npu; printf \"%s\\n\" \"$out\"; echo \"@@status $s\"; \
+         if test \"$s\" = 0 && test -n \"$t\"; then card=; seen=; \
+         printf \"%s\\n\" \"$out\" | while IFS=\"|\" read -r border identity state figures rest; do \
+         test -z \"$rest\" || continue; set -- $identity; \
+         test \"$1\" -ge 0 2>/dev/null && test \"$1\" -le 4294967295 2>/dev/null || continue; \
+         case \"$2\" in 310B*) card=\"$1\"; continue;; esac; \
+         if test -n \"$2\"; then test \"$2\" -ge 0 2>/dev/null || {{ card=; continue; }}; fi; \
+         test -n \"$card\" || continue; chip=\"$1\"; \
+         case \" $seen \" in *\" $card/$chip \"*) continue;; esac; seen=\"$seen $card/$chip\"; \
+         for kind in usages memory; do \
+         extra=$($t npu-smi info -t \"$kind\" -i \"$card\" -c \"$chip\" 2>&1); code=$?; \
+         echo \"@@ascend/$card/$chip/$kind\"; printf \"%s\\n\" \"$extra\"; echo \"@@status $code\"; \
+         case \"$code\" in 124|137) exit;; esac; \
+         done; done; fi; \
          for p in $(printf \"%s\\n\" \"$out\" | cut -s -d\"|\" -f3); do \
          if test \"$p\" -gt 0 2>/dev/null; then pids=\"$pids,$p\"; fi; done; \
          fi; \
@@ -104,7 +123,7 @@ pub fn parse(output: &str) -> Parsed {
         }
     }
     let (nvidia, npu) = (parts.get("nvidia"), parts.get("npu"));
-    if nvidia.is_none() && npu.is_none() {
+    if nvidia.is_none() && npu.is_none() && !parts.contains_key("tegra") {
         return Parsed::NoTools;
     }
 
@@ -118,8 +137,27 @@ pub fn parse(output: &str) -> Parsed {
     }
     if let Some(part) = npu {
         parse_npu(part, &mut reading, &mut processes);
+        for device in &mut reading.devices {
+            if let Some(metrics) = &mut device.ascend {
+                parse_ascend_metrics(&parts, metrics);
+            }
+        }
     }
-    reading.timed_out = parts.values().any(Part::timed_out);
+    let tegra_sampled = parts
+        .get("tegra")
+        .is_some_and(|part| parse_tegra(part, &mut reading));
+    if tegra_sampled && let Some(part) = parts.get("tegra-frequency") {
+        let frequency = part
+            .lines
+            .first()
+            .and_then(|value| value.trim().parse::<u64>().ok());
+        if let Some(device) = reading.devices.iter_mut().find(|device| device.integrated) {
+            device.frequency_hz = frequency;
+        }
+    }
+    reading.timed_out = parts
+        .iter()
+        .any(|(name, part)| part.timed_out() && !(*name == "tegra" && tegra_sampled));
     reading.uptime = parts
         .get("uptime")
         .and_then(|part| part.lines.first())
@@ -169,7 +207,8 @@ fn mebibytes(text: &str) -> Option<u64> {
 /// A word the tool printed, or `None` for its 「[N/A]」.
 fn present(text: &str) -> Option<String> {
     let text = text.trim();
-    (!text.is_empty() && !text.starts_with('[') && text != "N/A").then(|| text.to_owned())
+    (!text.is_empty() && !text.starts_with('[') && text != "N/A" && text != "NA")
+        .then(|| text.to_owned())
 }
 
 /// What a tool printed besides its answer, when it failed: why. When it
@@ -185,9 +224,18 @@ fn errors(tool: &str, part: &Part, lines: Vec<&str>, reading: &mut Reading) {
         .map(str::to_owned)
         .collect();
     if part.timed_out() {
-        reading
-            .errors
-            .push(t!("gpu.error.timed_out", tool = tool, seconds = TIMEOUT).into());
+        reading.errors.push(
+            t!(
+                "gpu.error.timed_out",
+                tool = tool,
+                seconds = if tool == "tegrastats" {
+                    TEGRA_WINDOW
+                } else {
+                    TIMEOUT
+                }
+            )
+            .into(),
+        );
     } else if lines.is_empty() {
         reading.errors.push(
             t!(
@@ -218,6 +266,9 @@ fn parse_nvidia(part: &Part, reading: &mut Reading) {
         let ecc = fields[13].parse::<u64>().ok();
         let label = format!("GPU {}", fields[0]);
         reading.devices.push(Device {
+            integrated: false,
+            ascend: None,
+            frequency_hz: None,
             vendor: Vendor::Nvidia,
             key: uuid
                 .clone()
@@ -254,7 +305,12 @@ fn parse_nvidia(part: &Part, reading: &mut Reading) {
 fn parse_nvidia_apps(part: &Part, reading: &mut Reading, processes: &mut Vec<GpuProcess>) {
     let mut other = Vec::new();
     for line in &part.lines {
-        let mut fields = line.splitn(4, ',').map(str::trim);
+        // Jetson 会为不支持的进程查询返回一整行 N/A，不将它作为驱动故障
+        let cells: Vec<_> = line.splitn(4, ',').map(str::trim).collect();
+        if cells.len() == 4 && cells[1..].iter().all(|value| present(value).is_none()) {
+            continue;
+        }
+        let mut fields = cells.into_iter();
         let (Some(uuid), Some(Ok(pid)), Some(memory), Some(name)) = (
             fields.next(),
             fields.next().map(str::parse::<u32>),
@@ -277,6 +333,142 @@ fn parse_nvidia_apps(part: &Part, reading: &mut Reading, processes: &mut Vec<Gpu
         });
     }
     errors("nvidia-smi", part, other, reading);
+}
+
+/// tegrastats 是持续输出工具；固定采样窗口结束后只接受最后一条完整 GPU 读数
+fn parse_tegra(part: &Part, reading: &mut Reading) -> bool {
+    if part.failed() && !part.timed_out() {
+        errors("tegrastats", part, part.lines.clone(), reading);
+        return false;
+    }
+    let sample = part.lines.iter().rev().find_map(|line| {
+        let words: Vec<_> = line.split_whitespace().collect();
+        let at = words.iter().position(|word| *word == "GR3D_FREQ")?;
+        let (value, _) = words.get(at + 1)?.split_once('%')?;
+        let utilization = number(value).filter(|value| (0.0..=100.0).contains(value))?;
+        let temperature = words.iter().find_map(|word| {
+            word.strip_prefix("gpu@")?
+                .strip_suffix('C')
+                .and_then(number)
+        });
+        Some((utilization, temperature))
+    });
+    let Some((utilization, temperature)) = sample else {
+        if part.failed() {
+            errors("tegrastats", part, part.lines.clone(), reading);
+        } else {
+            reading
+                .errors
+                .push(t!("gpu.error.format", tool = "tegrastats").to_string());
+        }
+        return false;
+    };
+    // 仅合并板载 nvgpu，不能覆盖同机的独立 NVIDIA GPU
+    let ix = reading
+        .devices
+        .iter()
+        .position(|device| device.vendor == Vendor::Nvidia && device.name.contains("nvgpu"));
+    let device = if let Some(ix) = ix {
+        &mut reading.devices[ix]
+    } else {
+        reading.devices.push(Device {
+            vendor: Vendor::Nvidia,
+            integrated: true,
+            ascend: None,
+            frequency_hz: None,
+            key: "jetson/gpu".into(),
+            label: "GPU".into(),
+            name: "NVIDIA Jetson GPU".into(),
+            bus_id: None,
+            uuid: None,
+            pstate: None,
+            utilization: None,
+            memory_used: None,
+            memory_total: None,
+            temperature: None,
+            power: None,
+            power_limit: None,
+            fan: None,
+            health: Health::Unknown,
+        });
+        reading.devices.last_mut().unwrap()
+    };
+    device.integrated = true;
+    device.name = device.name.replace(" (nvgpu)", "");
+    device.utilization = Some(utilization);
+    device.temperature = temperature;
+    true
+}
+
+/// 只接收完整、成功查询中的白名单键，百分比与频率各自验证
+fn query_values<'a>(part: Option<&'a Part<'a>>) -> Result<HashMap<&'a str, &'a str>, QueryStatus> {
+    let Some(part) = part else {
+        return Err(QueryStatus::Unavailable);
+    };
+    if part.timed_out() {
+        return Err(QueryStatus::Timeout);
+    }
+    if part
+        .lines
+        .iter()
+        .any(|line| line.contains("does not support"))
+    {
+        return Err(QueryStatus::Unavailable);
+    }
+    if part.status != Some(0) {
+        return Err(QueryStatus::Failed);
+    }
+    let mut values = HashMap::new();
+    for (key, value) in part.lines.iter().filter_map(|line| line.split_once(':')) {
+        if values.insert(key.trim(), value.trim()).is_some() {
+            return Err(QueryStatus::Invalid);
+        }
+    }
+    Ok(values)
+}
+
+fn parse_ascend_metrics(parts: &HashMap<&str, Part>, metrics: &mut AscendMetrics) {
+    let prefix = format!("ascend/{}/{}", metrics.npu, metrics.chip);
+    match query_values(parts.get(format!("{prefix}/usages").as_str())) {
+        Ok(values) => {
+            let percent = |key| {
+                values
+                    .get(key)
+                    .and_then(|value| number(value))
+                    .filter(|value| *value <= 100.)
+            };
+            metrics.ai_cpu = percent("Aicpu Usage Rate(%)");
+            metrics.control_cpu = percent("Ctrlcpu Usage Rate(%)");
+            metrics.memory_bandwidth = percent("Memory Bandwidth Usage Rate(%)");
+            metrics.usages_status = if [
+                metrics.ai_cpu,
+                metrics.control_cpu,
+                metrics.memory_bandwidth,
+            ]
+            .iter()
+            .all(Option::is_some)
+            {
+                QueryStatus::Ready
+            } else {
+                QueryStatus::Invalid
+            };
+        }
+        Err(status) => metrics.usages_status = status,
+    }
+    match query_values(parts.get(format!("{prefix}/memory").as_str())) {
+        Ok(values) => {
+            metrics.memory_frequency_mhz = values
+                .get("Clock Speed(MHz)")
+                .and_then(|value| number(value))
+                .filter(|value| *value > 0.);
+            metrics.memory_status = if metrics.memory_frequency_mhz.is_some() {
+                QueryStatus::Ready
+            } else {
+                QueryStatus::Invalid
+            };
+        }
+        Err(status) => metrics.memory_status = status,
+    }
 }
 
 /// A card of `npu-smi info`'s table, as its first row says, with the chips
@@ -342,7 +534,11 @@ fn parse_npu(part: &Part, reading: &mut Reading, processes: &mut Vec<GpuProcess>
             continue;
         };
         match cells.as_slice() {
-            [_, bus_id, figures] if bus_id.contains(':') => {
+            [_, bus_id, figures]
+                if bus_id.contains(':')
+                    || (present(bus_id).is_none()
+                        && first.clone().all(|word| word.parse::<u32>().is_ok())) =>
+            {
                 let Some(card) = cards.last_mut() else {
                     continue;
                 };
@@ -398,11 +594,19 @@ fn parse_npu(part: &Part, reading: &mut Reading, processes: &mut Vec<GpuProcess>
             };
             places.insert((card.npu, chip.id), reading.devices.len());
             reading.devices.push(Device {
+                integrated: false,
+                ascend: card.name.starts_with("310B").then_some(AscendMetrics {
+                    npu: card.npu,
+                    chip: chip.id,
+                    ..AscendMetrics::default()
+                }),
+                frequency_hz: None,
                 vendor: Vendor::Ascend,
-                key: chip.bus_id.to_owned(),
+                key: present(chip.bus_id)
+                    .unwrap_or_else(|| format!("ascend/{}/{}", card.npu, chip.id)),
                 label,
                 name: card.name.clone(),
-                bus_id: Some(chip.bus_id.to_owned()),
+                bus_id: present(chip.bus_id),
                 uuid: None,
                 pstate: None,
                 utilization: chip.ai_core,
@@ -701,6 +905,115 @@ GPU-5b2f0c1e-0000-1111-2222-333344445555, 4243, 1000, /usr/bin/python3
     }
 
     #[test]
+    fn ascend_310b_without_pci_bus_keeps_memory_temperature_and_stable_identity() {
+        let sample = include_str!("../../tests/fixtures/gpu/ascend-310b.txt");
+        let result = reading(sample);
+        assert_eq!(result.devices.len(), 1);
+        let device = &result.devices[0];
+        assert_eq!(device.name, "310B1");
+        assert_eq!(device.key, "ascend/0/0");
+        assert_eq!(device.bus_id, None);
+        assert_eq!(device.utilization, Some(0.));
+        assert_eq!(device.memory_used, Some(1467 * 1024 * 1024));
+        assert_eq!(device.memory_total, Some(11578 * 1024 * 1024));
+        assert_eq!(device.temperature, Some(45.));
+        assert_eq!(device.power, Some(4.7));
+        assert_eq!(device.health, Health::Ok);
+        let metrics = device.ascend.as_ref().unwrap();
+        assert_eq!(metrics.ai_cpu, Some(0.));
+        assert_eq!(metrics.control_cpu, Some(3.));
+        assert_eq!(metrics.memory_bandwidth, Some(1.));
+        assert_eq!(metrics.memory_frequency_mhz, Some(2131.));
+        assert_eq!(metrics.usages_status, QueryStatus::Ready);
+        assert_eq!(metrics.memory_status, QueryStatus::Ready);
+        assert!(result.errors.is_empty());
+    }
+
+    #[test]
+    fn ascend_extensions_validate_each_query_and_do_not_reuse_old_values() {
+        let sample = include_str!("../../tests/fixtures/gpu/ascend-310b.txt");
+        let base = sample.split("@@ascend/").next().unwrap();
+        for (body, code, expected) in [
+            (
+                "This device does not support querying usages.",
+                0,
+                QueryStatus::Unavailable,
+            ),
+            ("Permission denied", 1, QueryStatus::Failed),
+            ("Aicpu Usage Rate(%) : 10", 137, QueryStatus::Timeout),
+            (
+                "Aicpu Usage Rate(%) : 101\nCtrlcpu Usage Rate(%) : -1\nMemory Bandwidth Usage Rate(%) : NaN",
+                0,
+                QueryStatus::Invalid,
+            ),
+            (
+                "Aicpu Usage Rate(%) : 10\nAicpu Usage Rate(%) : 20",
+                0,
+                QueryStatus::Invalid,
+            ),
+        ] {
+            let result = reading(&format!(
+                "{base}@@ascend/0/0/usages\n{body}\n@@status {code}\n@@ascend/0/0/memory\nClock Speed(MHz): 2131\n@@status 0\n@@end\n"
+            ));
+            let metrics = result.devices[0].ascend.as_ref().unwrap();
+            assert_eq!(metrics.usages_status, expected);
+            assert_eq!(metrics.ai_cpu, None);
+            assert_eq!(metrics.memory_frequency_mhz, Some(2131.));
+            assert_eq!(result.timed_out, code == 137);
+            assert_eq!(result.devices[0].temperature, Some(45.));
+            assert!(result.errors.is_empty());
+        }
+        let missing = reading(base);
+        assert_eq!(missing.devices[0].ascend.as_ref().unwrap().ai_cpu, None);
+        let wrong_chip = reading(&sample.replace("@@ascend/0/0/", "@@ascend/1/0/"));
+        assert_eq!(
+            wrong_chip.devices[0]
+                .ascend
+                .as_ref()
+                .unwrap()
+                .memory_frequency_mhz,
+            None
+        );
+        let bad_clock = reading(&sample.replace(": 2131", ": 0"));
+        assert_eq!(
+            bad_clock.devices[0].ascend.as_ref().unwrap().memory_status,
+            QueryStatus::Invalid
+        );
+        let partial = reading(&sample.replace(
+            "Ctrlcpu Usage Rate(%)          : 3",
+            "Ctrlcpu Usage Rate(%)          : NA",
+        ));
+        let metrics = partial.devices[0].ascend.as_ref().unwrap();
+        assert_eq!(metrics.ai_cpu, Some(0.));
+        assert_eq!(metrics.control_cpu, None);
+        assert_eq!(metrics.memory_bandwidth, Some(1.));
+    }
+
+    #[test]
+    fn jetson_uses_tegrastats_without_inventing_vram_or_driver_errors() {
+        let sample = include_str!("../../tests/fixtures/gpu/jetson-orin-nx.txt");
+        let result = reading(sample);
+        assert_eq!(result.devices.len(), 1);
+        let device = &result.devices[0];
+        assert!(device.integrated);
+        assert_eq!(device.name, "Orin");
+        assert_eq!(device.utilization, Some(0.));
+        assert_eq!(device.frequency_hz, Some(306000000));
+        assert_eq!(device.temperature, Some(50.656));
+        assert_eq!(device.memory_total, None);
+        assert!(result.processes.is_empty());
+        assert!(result.errors.is_empty());
+        assert!(!result.timed_out);
+        let bad = reading(&sample.replace("GR3D_FREQ 0%", "GR3D_FREQ 101%"));
+        assert!(bad.timed_out);
+        assert!(!bad.errors.is_empty());
+        let no_smi = sample.split("@@tegra").nth(1).unwrap();
+        let fallback = reading(&format!("@@tegra{no_smi}"));
+        assert_eq!(fallback.devices[0].name, "NVIDIA Jetson GPU");
+        assert_eq!(fallback.devices[0].utilization, Some(0.));
+    }
+
+    #[test]
     fn the_host_says_how_long_it_has_been_up() {
         let up = reading(&format!("@@uptime\n5359162.33\n{NVIDIA}"));
         assert_eq!(up.uptime, Some(Duration::from_secs_f64(5359162.33)));
@@ -834,6 +1147,52 @@ GPU-5b2f0c1e-0000-1111-2222-333344445555, 4243, 1000, /usr/bin/python3
             "{output}"
         );
         assert!(output.ends_with("@@end\n"));
+
+        // 使用非零编号验证查询按实际 NPU/芯片定位，而不是固定查询 0/0
+        let board = include_str!("../../tests/fixtures/gpu/ascend-310b.txt");
+        let table = board
+            .split("@@npu\n")
+            .nth(1)
+            .unwrap()
+            .split("@@status")
+            .next()
+            .unwrap()
+            .replace("| 0       310B1", "| 7       310B1")
+            .replace("| 0       0 ", "| 3       0 ");
+        let usages = board
+            .split("@@ascend/0/0/usages\n")
+            .nth(1)
+            .unwrap()
+            .split("@@status")
+            .next()
+            .unwrap();
+        let memory = board
+            .split("@@ascend/0/0/memory\n")
+            .nth(1)
+            .unwrap()
+            .split("@@status")
+            .next()
+            .unwrap();
+        tool(
+            "npu-smi",
+            &format!(
+                "case \"$*\" in\n\"info\") printf '%s' '{table}';;\n\"info -t usages -i 7 -c 3\") printf '%s' '{usages}';;\n\"info -t memory -i 7 -c 3\") printf '%s' '{memory}';;\n*) exit 2;;\nesac\n"
+            ),
+        );
+        let output = crate::testing::sh(script(&command), Some(&path));
+        let output = String::from_utf8(output.stdout).unwrap();
+        let extended = super::parse(&output);
+        let Parsed::Reading(extended) = extended else {
+            panic!("missing board");
+        };
+        let metrics = extended
+            .devices
+            .iter()
+            .find_map(|device| device.ascend.as_ref())
+            .unwrap();
+        assert_eq!((metrics.npu, metrics.chip), (7, 3));
+        assert_eq!(metrics.usages_status, QueryStatus::Ready, "{output}");
+        assert_eq!(metrics.memory_frequency_mhz, Some(2131.), "{output}");
 
         // Neither tool: the uptime, then the end.
         std::fs::remove_file(bin.join("nvidia-smi")).unwrap();

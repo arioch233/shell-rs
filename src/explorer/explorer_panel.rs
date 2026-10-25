@@ -85,6 +85,8 @@ pub struct ExplorerPanel {
     /// Batches waiting, running and ended, WinSCP's queue. The engine runs
     /// one at a time and the panel hands it the next.
     pub(super) queue: TransferQueue,
+    pub(super) file_promises: HashMap<QueueId, crate::shared::file_drag::FilePromiseRequest>,
+    pub(super) external_drags: Vec<Task<()>>,
     /// The engine is working on a command: a batch, a resume or a discard.
     /// Cleared by its `Idle`, which is when the next batch may go.
     pub(super) engine_busy: bool,
@@ -250,6 +252,8 @@ impl ExplorerPanel {
             remote,
             local_provider,
             operations: HashMap::new(),
+            file_promises: HashMap::new(),
+            external_drags: Vec::new(),
             next_operation: 0,
             files: HashMap::new(),
             opening: HashSet::new(),
@@ -445,7 +449,7 @@ impl ExplorerPanel {
     }
     /// Hand the engine the next batch if it is free for one. A batch that
     /// cannot be made into a request ends there and the next one goes.
-    fn start_next_if_idle(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn start_next_if_idle(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         while !self.engine_busy && self.state == ConnectionState::Connected {
             let Some((_, job)) = self.queue.start_next() else {
                 return;
@@ -458,6 +462,7 @@ impl ExplorerPanel {
                 Err(error) => {
                     self.queue
                         .abandon_head(Removal::NotStarted(error.to_string()));
+                    self.finish_file_promises();
                     window.push_notification(Notification::error(error.to_string()), cx);
                 }
             }
@@ -483,6 +488,7 @@ impl ExplorerPanel {
         self.send(SftpCommand::PromptReply { request_id, reply });
     }
     pub fn disconnect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.cancel_file_promises();
         self.send(SftpCommand::Disconnect);
         self.state = ConnectionState::Disconnected;
         self.remote.update(cx, |pane, cx| {
@@ -554,6 +560,7 @@ impl ExplorerPanel {
                 cx.emit(ExplorerPanelEvent::StateChanged(self.id, self.host_id));
             }
             SftpEvent::Disconnected(message) => {
+                self.cancel_file_promises();
                 self.state = ConnectionState::Disconnected;
                 self.latency = None;
                 self.abandon_remote_operations(cx);
@@ -643,6 +650,7 @@ impl ExplorerPanel {
             SftpEvent::Latency(latency) => self.latency = Some(latency),
         }
         self.sync_available(cx);
+        self.finish_file_promises();
         cx.notify();
     }
     pub fn navigate(
@@ -870,6 +878,9 @@ impl ExplorerPanel {
             ExplorerCommand::DownloadPaths { paths, target } => {
                 self.open_download(paths.clone(), target.clone(), window, cx)
             }
+            ExplorerCommand::DragDownload { paths } => {
+                self.start_external_download(paths.clone(), window, cx)
+            }
             ExplorerCommand::Enqueue(job) => self.enqueue(job.clone(), window, cx),
             ExplorerCommand::Delete { remote } => self.confirm_delete(*remote, window, cx),
             ExplorerCommand::DeletePaths { paths } => self.delete_paths(paths.clone(), window, cx),
@@ -965,6 +976,7 @@ impl ExplorerPanel {
             ExplorerCommand::ClearFinishedTransfers => self.queue.clear_finished(),
             ExplorerCommand::CloseConfirmed => {}
         }
+        self.finish_file_promises();
         self.sync_available(cx);
         cx.notify();
     }
@@ -1122,6 +1134,7 @@ fn needs_connection(command: &ExplorerCommand) -> bool {
         | C::DeletePaths { .. }
         | C::Transfer { .. }
         | C::DownloadPaths { .. }
+        | C::DragDownload { .. }
         | C::ChooseFiles
         | C::UploadPaths { .. }
         | C::Enqueue(_) => true,
@@ -1278,7 +1291,7 @@ impl Render for ExplorerPanel {
 }
 
 /// The engine's command for a queued batch; fails for paths it cannot take.
-fn transfer_command(job: &TransferJob) -> anyhow::Result<SftpCommand> {
+pub(super) fn transfer_command(job: &TransferJob) -> anyhow::Result<SftpCommand> {
     match job {
         TransferJob::Upload { paths, target } => RemotePath::new(target.clone())
             .and_then(|target| UploadRequest::new(paths.clone(), target))
@@ -1289,6 +1302,25 @@ fn transfer_command(job: &TransferJob) -> anyhow::Result<SftpCommand> {
             .collect::<anyhow::Result<Vec<_>>>()
             .and_then(|paths| DownloadRequest::new(paths, target.into()))
             .map(SftpCommand::Download),
+        TransferJob::DownloadToPath { source, target } => {
+            let target = std::path::Path::new(target);
+            let directory = target
+                .parent()
+                .ok_or_else(|| anyhow::anyhow!("Invalid download destination"))?;
+            let name = target
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or_else(|| anyhow::anyhow!("Invalid download filename"))?;
+            DownloadRequest::new(
+                vec![RemotePath::new(source.clone())?],
+                directory.to_path_buf(),
+            )
+            .map(|request| {
+                SftpCommand::Download(
+                    request.resolved(directory.to_path_buf(), Some(name.to_string())),
+                )
+            })
+        }
     }
 }
 

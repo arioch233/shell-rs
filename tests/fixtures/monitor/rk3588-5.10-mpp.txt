@@ -1,0 +1,6 @@
+@@node /proc/mpp_service/version ready
+c80b8b822d author: jw-rockchip 2023-11-15 sync from rkserver 20231115
+@@endnode
+@@node /proc/mpp_service/load unsupported
+@@endnode
+@@complete

@@ -1,0 +1,8 @@
+session: pid=1354197 index=495
+ device: fdbd0000.rkvenc-core
+ memory: 0 MiB
+| session| device| width| height| format| fps_in| fps_out| rc_mode| bitrate|gop_size|fps_calc| profile|
+| 495    | RKVENC| 3840 | 2160  | h264  | 21    | 21     | vbr    |22707504|44      |12.95   |high    |
+session: pid=400 index=496
+ device: fdc38100.rkvdec-core
+ memory: 16 MiB

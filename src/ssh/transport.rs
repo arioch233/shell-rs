@@ -5,6 +5,7 @@ use super::{
     run_terminal_worker,
     tester::describe_login_error,
 };
+use crate::terminal::{DetailedExecRequest, ExecFailure, ExecOutput};
 use crate::{
     connection::Latency,
     host::HostLogin,
@@ -17,6 +18,7 @@ use crate::{
 };
 use anyhow::{Result, anyhow, bail};
 use async_channel::Sender;
+use futures::{StreamExt, stream::FuturesUnordered};
 use russh::{ChannelMsg, client};
 use std::{
     collections::VecDeque,
@@ -150,20 +152,20 @@ impl SshTerminalTransport {
         latency_ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
         let mut ping: Option<Pin<Box<dyn Future<Output = Latency> + Send + '_>>> = None;
 
-        // Channels for the right sidebar, one at a time: its tools' commands
-        // and 文件's SFTP. A tool asking again before its last answer came
-        // back waits its turn rather than piling channels onto the server.
-        // Each future starts when it is first polled, so a queued one has
-        // done nothing yet.
+        // 旁路至多两个请求并行，慢硬件读取不会独占系统采样名额
+        // 队列里的 future 尚未执行，取消后不会再打开通道
         type Side<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
         let mut side_queue: VecDeque<Side<'_>> = VecDeque::new();
-        let mut side: Option<Side<'_>> = None;
+        let mut side: FuturesUnordered<Side<'_>> = FuturesUnordered::new();
 
         let mut exit_code = 0;
         let mut exit_signal = None;
         loop {
-            if side.is_none() {
-                side = side_queue.pop_front();
+            while side.len() < 2 {
+                let Some(next) = side_queue.pop_front() else {
+                    break;
+                };
+                side.push(next);
             }
             tokio::select! {
                 command = io_rx.recv() => match command {
@@ -189,10 +191,23 @@ impl SshTerminalTransport {
                         }).await;
                         return Ok(());
                     }
+                    Some(TerminalTransportCommand::ExecDetailed(request)) if shell_only => {
+                        let _ = request.reply.send(Err(ExecFailure::Unsupported));
+                    }
+                    Some(TerminalTransportCommand::ExecDetailed(request)) => {
+                        if side_queue.len() >= 32 {
+                            let _ = request.reply.send(Err(ExecFailure::Busy));
+                        } else {
+                            side_queue.push_back(Box::pin(run_detailed_exec(&handle, request)));
+                        }
+                    }
                     Some(TerminalTransportCommand::Exec(request)) if shell_only => {
                         // The answer for a terminal that carries nothing
                         // beside the shell.
                         let _ = request.reply.send(Err(t!("ssh.terminal.shell_only").into()));
+                    }
+                    Some(TerminalTransportCommand::Exec(request)) if side_queue.len() >= 32 => {
+                        let _ = request.reply.send(Err("SSH side channel queue is full".into()));
                     }
                     Some(TerminalTransportCommand::Exec(request)) => {
                         side_queue.push_back(Box::pin(run_exec(&handle, request)));
@@ -200,15 +215,16 @@ impl SshTerminalTransport {
                     Some(TerminalTransportCommand::OpenSftp(request)) if shell_only => {
                         let _ = request.reply.send(Err(t!("ssh.terminal.shell_only_sftp").into()));
                     }
+                    Some(TerminalTransportCommand::OpenSftp(request)) if side_queue.len() >= 32 => {
+                        let _ = request.reply.send(Err("SSH side channel queue is full".into()));
+                    }
                     Some(TerminalTransportCommand::OpenSftp(request)) => {
                         side_queue.push_back(Box::pin(open_sftp(&handle, fingerprint.clone(), request)));
                     }
                     Some(TerminalTransportCommand::PromptReply { .. })
                     | Some(TerminalTransportCommand::SendBreak) => {}
                 },
-                () = async { side.as_mut().expect("guarded").await }, if side.is_some() => {
-                    side = None;
-                },
+                _ = side.next(), if !side.is_empty() => {},
                 // Only armed while a probe channel is open, so a host that
                 // never answers costs one idle channel and nothing else.
                 message = async { probe_channel.as_mut().expect("guarded").wait().await },
@@ -310,6 +326,71 @@ async fn run_exec(handle: &SshHandle, request: ExecRequest) {
     let _ = reply.send(result);
 }
 
+/// 到期或取消后显式关闭通道，结果与远端退出状态分开表达
+async fn run_detailed_exec(handle: &SshHandle, request: DetailedExecRequest) {
+    if request.is_cancelled() {
+        let _ = request.reply.send(Err(ExecFailure::Cancelled));
+        return;
+    }
+    let deadline = tokio::time::Instant::now() + request.options.timeout;
+    let opened = tokio::time::timeout_at(deadline, handle.channel_open_session()).await;
+    let mut channel = match opened {
+        Ok(Ok(channel)) => channel,
+        Ok(Err(error)) => {
+            let _ = request
+                .reply
+                .send(Err(ExecFailure::Transport(error.to_string())));
+            return;
+        }
+        Err(_) => {
+            let _ = request.reply.send(Err(ExecFailure::Timeout));
+            return;
+        }
+    };
+    let result = tokio::time::timeout_at(deadline, async {
+        if request.is_cancelled() { return Err(ExecFailure::Cancelled); }
+        channel.exec(true, request.command.clone()).await
+            .map_err(|error| ExecFailure::Transport(error.to_string()))?;
+        if let Some(input) = request.input() {
+            channel.data(input.as_bytes()).await
+                .map_err(|error| ExecFailure::Transport(error.to_string()))?;
+        }
+        // 请求的输入已全部发送，无输入时也关闭写入端，避免远端等待 EOF
+        channel.eof().await
+            .map_err(|error| ExecFailure::Transport(error.to_string()))?;
+        let mut stdout = zeroize::Zeroizing::new(Vec::new());
+        let mut stderr = zeroize::Zeroizing::new(Vec::new());
+        let mut exit_code = None;
+        loop {
+            if request.is_cancelled() { return Err(ExecFailure::Cancelled); }
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_millis(50)) => {},
+                message = channel.wait() => match message {
+                    Some(ChannelMsg::Data { data }) => {
+                        if stdout.len() + stderr.len() + data.len() > request.options.max_output_bytes {
+                            return Err(ExecFailure::OutputLimit);
+                        }
+                        stdout.extend_from_slice(&data);
+                    }
+                    Some(ChannelMsg::ExtendedData { data, .. }) => {
+                        if stdout.len() + stderr.len() + data.len() > request.options.max_output_bytes {
+                            return Err(ExecFailure::OutputLimit);
+                        }
+                        stderr.extend_from_slice(&data);
+                    }
+                    Some(ChannelMsg::ExitStatus { exit_status }) => exit_code = Some(exit_status),
+                    Some(ChannelMsg::ExitSignal { .. } | ChannelMsg::Failure) => return Err(ExecFailure::Transport("Remote command failed".into())),
+                    Some(ChannelMsg::Close) | None => break,
+                    _ => {},
+                }
+            }
+        }
+        Ok(ExecOutput { stdout: request.redact(String::from_utf8_lossy(&stdout).into_owned()), stderr: request.redact(String::from_utf8_lossy(&stderr).into_owned()), exit_code })
+    }).await.unwrap_or(Err(ExecFailure::Timeout));
+    let _ = tokio::time::timeout(Duration::from_millis(250), channel.close()).await;
+    let _ = request.reply.send(result);
+}
+
 /// Open an SFTP channel beside the shell and answer its request with the
 /// channel's stream. The stream goes on to the SFTP worker's own runtime;
 /// the connection's session task stays here, on the terminal's.
@@ -392,6 +473,7 @@ mod tests {
         input: Vec<u8>,
         /// Every command run through an exec channel, in order.
         execs: Vec<String>,
+        stdin_channel: Option<russh::ChannelId>,
     }
 
     #[derive(Clone)]
@@ -595,6 +677,13 @@ mod tests {
                 .execs
                 .push(String::from_utf8_lossy(command).into_owned());
             session.channel_success(channel)?;
+            if command == b"monitor-stdin" {
+                self.state.lock().unwrap().stdin_channel = Some(channel);
+                return Ok(());
+            }
+            if command == b"monitor-hang" {
+                return Ok(());
+            }
             if command == CLI_COMMAND.as_bytes() {
                 session.data(channel, b"out".to_vec())?;
                 session.extended_data(channel, 1, b"err".to_vec())?;
@@ -625,6 +714,19 @@ mod tests {
                 .lock()
                 .unwrap_or_else(|error| error.into_inner())
                 .resize = Some((columns, rows, pixel_width, pixel_height));
+            Ok(())
+        }
+
+        async fn channel_eof(
+            &mut self,
+            channel: russh::ChannelId,
+            session: &mut server::Session,
+        ) -> Result<(), Self::Error> {
+            if self.state.lock().unwrap().stdin_channel == Some(channel) {
+                session.exit_status_request(channel, 0)?;
+                session.eof(channel)?;
+                session.close(channel)?;
+            }
             Ok(())
         }
 
@@ -811,7 +913,27 @@ mod tests {
         secrets: SharedSecretStore,
         wait_for_host_os: bool,
         execs: &[&str],
+        answer: impl FnMut(&ConnectionPromptKind) -> ConnectionPromptReply,
+    ) -> ConnectionReport {
+        connect_driving(
+            login,
+            known_hosts,
+            secrets,
+            wait_for_host_os,
+            execs,
+            answer,
+            |_| {},
+        )
+    }
+
+    fn connect_driving(
+        login: HostLogin,
+        known_hosts: &Path,
+        secrets: SharedSecretStore,
+        wait_for_host_os: bool,
+        execs: &[&str],
         mut answer: impl FnMut(&ConnectionPromptKind) -> ConnectionPromptReply,
+        drive: impl FnOnce(&mpsc::Sender<TerminalTransportCommand>),
     ) -> ConnectionReport {
         let mut report = ConnectionReport::default();
         let provider =
@@ -872,7 +994,7 @@ mod tests {
                 }
             }
         }
-        // All sent at once: the transport runs them one after another.
+        // 一次提交全部命令，传输层至多同时执行两个
         let replies: Vec<_> = execs
             .iter()
             .map(|command| {
@@ -893,6 +1015,7 @@ mod tests {
                     .expect("a command beside the shell was never answered"),
             );
         }
+        drive(&command_tx);
         command_tx.send(TerminalTransportCommand::Shutdown).unwrap();
         done_rx
             .recv_timeout(SHUTDOWN_TIMEOUT + Duration::from_secs(1))
@@ -2228,5 +2351,124 @@ mod tests {
             .expect("the terminal did not stop")
             .unwrap();
         changed.worker.join().unwrap();
+    }
+    #[test]
+    fn detailed_exec_preserves_exit_and_errors_and_a_slow_request_leaves_a_lane() {
+        let Some(server) = start_server(TestAuth::Password) else {
+            return;
+        };
+        let directory = tempfile::tempdir().unwrap();
+        let host = password_host(server.port);
+        connect_driving(
+            HostLogin::of(&host, None),
+            &directory.path().join("known_hosts"),
+            Arc::new(NoSecretStore),
+            false,
+            &[],
+            |kind| match kind {
+                ConnectionPromptKind::UnknownHost(_) => ConnectionPromptReply::TrustAndSave,
+                ConnectionPromptKind::Authentication(_) => {
+                    ConnectionPromptReply::Answers(vec![ConnectionSecret::new(TEST_PASSWORD)])
+                }
+                _ => panic!("unexpected host key change"),
+            },
+            |commands| {
+                let send = |command: &str, options: crate::terminal::ExecOptions| {
+                    let (request, handle) = DetailedExecRequest::new(command.into(), options);
+                    commands
+                        .send(TerminalTransportCommand::ExecDetailed(request))
+                        .unwrap();
+                    handle
+                };
+                let wait = |handle: &crate::terminal::ExecHandle| {
+                    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+                    loop {
+                        if let Some(result) = handle.try_recv() {
+                            break result;
+                        }
+                        assert!(
+                            std::time::Instant::now() < deadline,
+                            "request did not complete"
+                        );
+                        thread::sleep(Duration::from_millis(5));
+                    }
+                };
+                let options = crate::terminal::ExecOptions {
+                    timeout: Duration::from_secs(2),
+                    ..Default::default()
+                };
+                let slow = send("monitor-hang", options);
+                // 无输入的请求也必须发送 EOF，否则远端等待输入结束时会误报超时
+                let empty_input = send("monitor-stdin", options);
+                let empty_output = wait(&empty_input).unwrap();
+                assert_eq!(empty_output.stdout, "");
+                assert_eq!(empty_output.exit_code, Some(0));
+                let (request, input_handle) =
+                    DetailedExecRequest::new("monitor-stdin".into(), options);
+                commands
+                    .send(TerminalTransportCommand::ExecDetailed(
+                        request.with_input(ConnectionSecret::new("sudo-only-secret\n")),
+                    ))
+                    .unwrap();
+                let input_output = wait(&input_handle).unwrap();
+                assert_eq!(input_output.stdout, "<redacted>\n");
+                assert_eq!(input_output.exit_code, Some(0));
+                {
+                    let state = server.state.lock().unwrap();
+                    assert_eq!(state.input, b"sudo-only-secret\n");
+                    assert!(
+                        !state
+                            .execs
+                            .iter()
+                            .any(|command| command.contains("sudo-only-secret"))
+                    );
+                }
+                let quick = send(CLI_COMMAND, options);
+                let output = wait(&quick).unwrap();
+                assert_eq!(
+                    (
+                        output.stdout.as_str(),
+                        output.stderr.as_str(),
+                        output.exit_code
+                    ),
+                    ("out", "err", Some(3))
+                );
+                assert!(slow.try_recv().is_none());
+                drop(slow);
+                let limited = send(
+                    CLI_COMMAND,
+                    crate::terminal::ExecOptions {
+                        max_output_bytes: 5,
+                        ..options
+                    },
+                );
+                assert_eq!(wait(&limited), Err(ExecFailure::OutputLimit));
+                let timed = send(
+                    "monitor-hang",
+                    crate::terminal::ExecOptions {
+                        timeout: Duration::from_millis(150),
+                        ..options
+                    },
+                );
+                assert_eq!(wait(&timed), Err(ExecFailure::Timeout));
+                let (request, cancelled) =
+                    DetailedExecRequest::new("cancelled-before-start".into(), options);
+                drop(cancelled);
+                commands
+                    .send(TerminalTransportCommand::ExecDetailed(request))
+                    .unwrap();
+                let final_request = send(CLI_COMMAND, options);
+                assert!(wait(&final_request).is_ok());
+                assert!(
+                    !server
+                        .state
+                        .lock()
+                        .unwrap()
+                        .execs
+                        .iter()
+                        .any(|command| command == "cancelled-before-start")
+                );
+            },
+        );
     }
 }

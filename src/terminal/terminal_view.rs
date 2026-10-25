@@ -538,6 +538,29 @@ impl TerminalView {
         self.engine.read(cx).exec(command)
     }
 
+    /// 复用当前终端连接，不发起额外认证
+    pub fn exec_detailed(
+        &self,
+        command: String,
+        options: super::ExecOptions,
+        cx: &App,
+    ) -> Option<super::ExecHandle> {
+        self.engine.read(cx).exec_detailed(command, options)
+    }
+
+    /// 经独立执行通道发送敏感输入，不进入终端历史
+    pub fn exec_detailed_with_input(
+        &self,
+        command: String,
+        options: super::ExecOptions,
+        input: crate::connection::ConnectionSecret,
+        cx: &App,
+    ) -> Option<super::ExecHandle> {
+        self.engine
+            .read(cx)
+            .exec_detailed_with_input(command, options, Some(input))
+    }
+
     /// Take up an `exec --terminal` run; see [`TerminalEngine::run_command`].
     pub fn run_command(&self, run: super::RunHandle, cx: &App) -> Result<(), super::RunFailure> {
         self.engine.read(cx).run_command(run)

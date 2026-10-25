@@ -20,12 +20,12 @@ use gpui_kit::*;
 
 use super::linux::{self, Parsed};
 use super::model::{
-    Concern, Device, GpuProcess, Health, Reading, Vendor, format_memory, format_power,
+    Concern, Device, GpuProcess, Health, QueryStatus, Reading, Vendor, format_memory, format_power,
     format_power_limit, format_process_memory, format_share, format_temperature, heat,
 };
 use crate::app::{CatalogIcon, EndProcess, RefreshGpu, ToggleAllGpuDevices, ToggleGpuDevice};
 use crate::i18n::{t, tn};
-use crate::shared::format_duration;
+use crate::shared::{card, compact_detail_row, format_duration, stacked_detail_row};
 use crate::terminal::{ExecResult, ExecTarget, RemoteTerminalId, exec_answer};
 
 /// Time between readings, from the end of one to the start of the next: a
@@ -58,8 +58,7 @@ pub struct GpuPanel {
     /// Whether a reading 刷新 asked for is on its way: the button turns
     /// for that one, not for every reading.
     refreshing: bool,
-    /// 全部展开 or 全部收起, the last one used; until then a host of one
-    /// device shows it unfolded, of more folded.
+    /// 记录全部展开或收起的偏好，默认收起技术详情
     all_unfolded: Option<bool>,
     /// The devices folded the other way since, by key.
     toggled: HashSet<String>,
@@ -243,8 +242,7 @@ impl GpuPanel {
     }
 
     fn unfolded(&self, reading: &Reading, device: &Device) -> bool {
-        let all = self.all_unfolded.unwrap_or(reading.devices.len() == 1);
-        all != self.toggled.contains(&device.key)
+        self.cards().unfolded(reading, device)
     }
 
     fn render_reading(
@@ -366,132 +364,20 @@ impl GpuPanel {
     }
 
     fn render_devices(&self, reading: &Reading, cx: &App) -> impl IntoElement {
-        let every = reading
-            .devices
-            .iter()
-            .all(|device| self.unfolded(reading, device));
-        let (label, icon) = if every {
-            (
-                t!("gpu.devices.fold_all"),
-                Icon::new(CatalogIcon::ChevronsDownUp),
-            )
-        } else {
-            (
-                t!("gpu.devices.unfold_all"),
-                Icon::new(IconName::ChevronsUpDown),
-            )
-        };
-        let dispatch = self.dispatch.clone();
-        v_flex()
-            .id("gpu-devices")
-            .test_support()
-            .gap_1()
-            .child(
-                h_flex()
-                    .gap_2()
-                    .child(
-                        div()
-                            .text_sm()
-                            .font_weight(FontWeight::MEDIUM)
-                            .child(t!("gpu.devices.title")),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(reading.devices.len().to_string()),
-                    )
-                    // With one device there is nothing to do all at once.
-                    .when(reading.devices.len() > 1, |header| {
-                        header.child(
-                            Button::new("gpu-devices-fold")
-                                .ghost()
-                                .xsmall()
-                                .icon(icon)
-                                .label(label)
-                                .on_click(move |_, window, cx| {
-                                    dispatch.dispatch_action(&ToggleAllGpuDevices, window, cx)
-                                }),
-                        )
-                    }),
-            )
-            // One model for all of them is in the header already.
-            .children(reading.devices.iter().enumerate().map(|(index, device)| {
-                render_device(
-                    index,
-                    device,
-                    reading.model().is_none(),
-                    self.unfolded(reading, device),
-                    &self.dispatch,
-                    cx,
-                )
-            }))
+        self.cards().render_devices(reading, cx)
     }
-
     fn render_processes(&self, reading: &Reading, cx: &App) -> impl IntoElement {
-        let clear_hit = self.menu_hit.clone();
-        let menu_hit = self.menu_hit.clone();
-        v_flex()
-            .id("gpu-processes")
-            .test_support()
-            .gap_1()
-            .child(
-                h_flex()
-                    .gap_2()
-                    .child(
-                        div()
-                            .flex_1()
-                            .text_sm()
-                            .font_weight(FontWeight::MEDIUM)
-                            .child(t!("gpu.processes.title")),
-                    )
-                    .child(
-                        div()
-                            .id("gpu-processes-count")
-                            .test_support()
-                            .aria_label(reading.processes.len().to_string())
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(reading.processes.len().to_string()),
-                    ),
-            )
-            .map(|list| {
-                if reading.processes.is_empty() {
-                    let text = t!("gpu.processes.empty");
-                    list.child(
-                        div()
-                            .id("gpu-no-processes")
-                            .test_support()
-                            .aria_label(text.clone())
-                            .py_2()
-                            .text_sm()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(text),
-                    )
-                } else {
-                    list.children(reading.processes.iter().map(|process| {
-                        let device = process
-                            .device
-                            .and_then(|index| reading.devices.get(index))
-                            .map_or("—", |device| device.label.as_str());
-                        render_process(
-                            process,
-                            device,
-                            self.menu_hit.clone(),
-                            self.focus_handle.clone(),
-                            cx,
-                        )
-                    }))
-                }
-            })
-            // The menu hangs off the list, not off the rows, as in 进程管理.
-            .capture_any_mouse_down(move |event, _, _| {
-                if matches!(event.button, MouseButton::Left | MouseButton::Right) {
-                    clear_hit.set(None);
-                }
-            })
-            .context_menu(move |menu, _, _| build_context_menu(menu_hit.get(), menu))
+        self.cards().render_processes(reading, false, cx)
+    }
+    fn cards(&self) -> GpuCards {
+        GpuCards {
+            scroll_handle: UniformListScrollHandle::new(),
+            all_unfolded: self.all_unfolded,
+            toggled: self.toggled.clone(),
+            menu_hit: self.menu_hit.clone(),
+            dispatch: self.dispatch.clone(),
+            focus_handle: self.focus_handle.clone(),
+        }
     }
 }
 
@@ -657,53 +543,10 @@ fn render_overview(reading: &Reading, cx: &App) -> impl IntoElement {
     )
 }
 
-/// A line of a device: what is measured, its bar and its figure. The name
-/// and the figure have widths of their own, so the bars of every line start
-/// and end together.
-fn bar(
-    id: SharedString,
-    label: SharedString,
-    percent: Option<f32>,
-    text: String,
-    color: Hsla,
-    cx: &App,
-) -> Div {
-    h_flex()
-        .pl_4()
-        .gap_2()
-        .text_xs()
-        .child(
-            div()
-                .w_12()
-                .flex_shrink_0()
-                .text_color(cx.theme().muted_foreground)
-                .child(label),
-        )
-        .child(
-            div().flex_1().min_w_8().child(
-                Progress::new(SharedString::from(format!("{id}-bar")))
-                    .small()
-                    .value(percent.unwrap_or(0.))
-                    .color(color),
-            ),
-        )
-        .child(
-            numeric(text.clone(), cx)
-                .id(id)
-                .test_support()
-                .aria_label(text)
-                .min_w_24()
-                .flex_shrink_0()
-                .text_right(),
-        )
-}
-
-/// A device in three lines: its label, model, heat and power, then how busy
-/// it is, then its memory. A click unfolds its details.
+/// 加速器沿用硬件卡片的层次：型号、负载、内存、温度与功耗，技术信息按需展开
 fn render_device(
     index: usize,
     device: &Device,
-    named: bool,
     unfolded: bool,
     dispatch: &FocusHandle,
     cx: &App,
@@ -722,118 +565,214 @@ fn render_device(
         power = power
     );
     let health = health_text(&device.health);
-    let health_color = concern_color(device.health.concern(), cx);
-    let heat_color = device
-        .temperature
-        .and_then(|celsius| concern_color(heat(celsius), cx));
     let key = device.key.clone();
     let dispatch = dispatch.clone();
-    let muted = cx.theme().muted_foreground;
-    v_flex()
+    let ascend = device.vendor == Vendor::Ascend;
+    div()
         .id(("gpu-device", index as u64))
         .test_support()
         .aria_label(label)
-        .gap_1p5()
-        .p_2()
-        .rounded(cx.theme().radius)
-        .bg(cx.theme().tokens.group_box)
-        .text_color(cx.theme().group_box_foreground)
-        // A click unfolds it; the border says it can.
-        .border_1()
-        .border_color(cx.theme().tokens.group_box)
-        .hover({
-            let border = cx.theme().border;
-            move |style| style.border_color(border)
-        })
-        .cursor_pointer()
-        .on_click(move |_, window, cx| {
-            dispatch.dispatch_action(&ToggleGpuDevice(key.clone()), window, cx)
-        })
+        .min_w_0()
         .child(
-            h_flex()
-                .gap_1p5()
-                .text_sm()
+            card(
+                SharedString::from(format!("gpu-card:{}", device.key)),
+                if ascend {
+                    CatalogIcon::Cpu
+                } else {
+                    CatalogIcon::Gpu
+                },
+                device.label.clone(),
+                (device.health != Health::Unknown).then(|| {
+                    div()
+                        .id(("gpu-device-health", index as u64))
+                        .test_support()
+                        .aria_label(health.clone())
+                        .text_xs()
+                        .text_color(
+                            concern_color(device.health.concern(), cx)
+                                .unwrap_or(cx.theme().muted_foreground),
+                        )
+                        .child(health.clone())
+                        .into_any_element()
+                }),
+                cx,
+            )
+            .child(
+                div()
+                    .id(("gpu-device-name", index as u64))
+                    .test_support()
+                    .aria_label(device.name.clone())
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(device.name.clone()),
+            )
+            .child(crate::shared::meter_with_color(
+                format!("gpu-device-utilization-{index}"),
+                if ascend {
+                    t!("gpu.devices.ai_core")
+                } else {
+                    t!("gpu.devices.utilization")
+                },
+                device.utilization,
+                cx.theme().success,
+                cx,
+            ))
+            .when_some(device.ascend.as_ref(), |view, metrics| {
+                view.child(
+                    v_flex().min_w_0().gap_2().children(
+                        [
+                            ("ai-cpu", t!("gpu.ascend.ai_cpu"), metrics.ai_cpu),
+                            (
+                                "control-cpu",
+                                t!("gpu.ascend.control_cpu"),
+                                metrics.control_cpu,
+                            ),
+                        ]
+                        .into_iter()
+                        .map(|(key, label, value)| {
+                            compact_detail_row(
+                                SharedString::from(format!("gpu-ascend:{}:{key}", device.key))
+                                    .into(),
+                                label,
+                                value
+                                    .map_or_else(|| "—".to_string(), crate::shared::format_percent)
+                                    .into(),
+                                cx,
+                            )
+                        }),
+                    ),
+                )
+            })
+            .when(!device.integrated, |view| {
+                view.child(
+                    v_flex()
+                        .min_w_0()
+                        .gap_1p5()
+                        .child(compact_detail_row(
+                            SharedString::from(format!("gpu-device-memory-{index}")).into(),
+                            if ascend {
+                                t!("gpu.devices.npu_memory")
+                            } else {
+                                t!("gpu.devices.memory")
+                            },
+                            memory.into(),
+                            cx,
+                        ))
+                        .when_some(device.memory_percent(), |view, percent| {
+                            view.child(
+                                Progress::new(SharedString::from(format!(
+                                    "gpu-memory-bar-{index}"
+                                )))
+                                .small()
+                                .value(percent)
+                                .color(cx.theme().info),
+                            )
+                        }),
+                )
+            })
+            .when_some(device.ascend.as_ref(), |view, metrics| {
+                view.child(
+                    v_flex()
+                        .min_w_0()
+                        .gap_2()
+                        .child(compact_detail_row(
+                            SharedString::from(format!(
+                                "gpu-ascend:{}:memory-bandwidth",
+                                device.key
+                            ))
+                            .into(),
+                            t!("gpu.ascend.memory_bandwidth"),
+                            metrics
+                                .memory_bandwidth
+                                .map_or_else(|| "—".to_string(), crate::shared::format_percent)
+                                .into(),
+                            cx,
+                        ))
+                        .child(compact_detail_row(
+                            SharedString::from(format!(
+                                "gpu-ascend:{}:memory-frequency",
+                                device.key
+                            ))
+                            .into(),
+                            t!("gpu.ascend.memory_frequency"),
+                            metrics
+                                .memory_frequency_mhz
+                                .map_or_else(|| "—".to_string(), |value| format!("{value:.0} MHz"))
+                                .into(),
+                            cx,
+                        ))
+                        .when(
+                            metrics.usages_status != QueryStatus::Ready
+                                || metrics.memory_status != QueryStatus::Ready,
+                            |view| {
+                                view.child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(t!("gpu.ascend.partial")),
+                                )
+                            },
+                        ),
+                )
+            })
+            .when(device.integrated, |view| {
+                view.child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(t!("gpu.devices.shared_memory")),
+                )
+            })
+            .when_some(device.frequency_hz, |view, frequency| {
+                view.child(compact_detail_row(
+                    ("gpu-device-frequency", index as u64).into(),
+                    t!("monitor.hardware.frequency"),
+                    format!("{:.0} MHz", frequency as f64 / 1_000_000.).into(),
+                    cx,
+                ))
+            })
+            .child(compact_detail_row(
+                ("gpu-device-temperature", index as u64).into(),
+                t!("monitor.thermal"),
+                temperature.into(),
+                cx,
+            ))
+            .when(device.power.is_some(), |view| {
+                view.child(compact_detail_row(
+                    ("gpu-device-power", index as u64).into(),
+                    t!("gpu.detail.power"),
+                    power.into(),
+                    cx,
+                ))
+            })
+            .child(
+                Button::new(SharedString::from(format!(
+                    "gpu-device-toggle:{}",
+                    device.key
+                )))
+                .ghost()
+                .small()
+                .w_full()
+                .justify_between()
+                .label(t!("monitor.hardware.details"))
+                .text_color(cx.theme().muted_foreground)
                 .child(
                     Icon::new(if unfolded {
-                        IconName::ChevronDown
+                        CatalogIcon::ChevronUp
                     } else {
-                        IconName::ChevronRight
+                        CatalogIcon::ChevronDown
                     })
-                    .xsmall()
-                    .text_color(muted),
+                    .xsmall(),
                 )
-                .child(
-                    div()
-                        .flex_shrink_0()
-                        .font_weight(FontWeight::MEDIUM)
-                        .child(device.label.clone()),
-                )
-                .when_some(health_color, |line, color| {
-                    let health = health.clone();
-                    line.child(
-                        div()
-                            .id(("gpu-device-health", index as u64))
-                            .test_support()
-                            .aria_label(health.clone())
-                            .flex_shrink_0()
-                            .size_2()
-                            .rounded_full()
-                            .bg(color)
-                            .tooltip(move |window, cx| {
-                                Tooltip::new(health.clone()).build(window, cx)
-                            }),
-                    )
-                })
-                // Cut short if it must, whole when pointed at.
-                .child(div().flex_1().min_w_0().when(named, |cell| {
-                    let name = SharedString::from(device.name.clone());
-                    cell.child(
-                        div()
-                            .id(("gpu-device-name", index as u64))
-                            .truncate()
-                            .text_xs()
-                            .text_color(muted)
-                            .child(name.clone())
-                            .tooltip(move |window, cx| {
-                                Tooltip::new(name.clone()).build(window, cx)
-                            }),
-                    )
-                }))
-                .child(
-                    numeric(temperature.clone(), cx)
-                        .id(("gpu-device-temperature", index as u64))
-                        .test_support()
-                        .aria_label(temperature)
-                        .flex_shrink_0()
-                        .text_xs()
-                        .when_some(heat_color, |text, color| text.text_color(color)),
-                )
-                .child(
-                    numeric(power, cx)
-                        .flex_shrink_0()
-                        .text_xs()
-                        .text_color(muted),
-                ),
+                .toggled(unfolded)
+                .on_click(move |_, window, cx| {
+                    dispatch.dispatch_action(&ToggleGpuDevice(key.clone()), window, cx)
+                }),
+            )
+            .when(unfolded, |view| {
+                view.child(render_details(index, device, health, cx))
+            }),
         )
-        .child(bar(
-            SharedString::from(format!("gpu-device-utilization-{index}")),
-            t!("gpu.devices.utilization"),
-            device.utilization,
-            utilization,
-            cx.theme().success,
-            cx,
-        ))
-        .child(bar(
-            SharedString::from(format!("gpu-device-memory-{index}")),
-            t!("gpu.devices.memory"),
-            device.memory_percent(),
-            memory,
-            cx.theme().info,
-            cx,
-        ))
-        .when(unfolded, |row| {
-            row.child(render_details(index, device, health, cx))
-        })
 }
 
 fn health_text(health: &Health) -> SharedString {
@@ -855,6 +794,50 @@ fn render_details(
     // Each with a name for the tests, which read the values by it.
     let mut fields: Vec<(&'static str, SharedString, String)> =
         vec![("model", t!("gpu.detail.model"), device.name.clone())];
+    fields.push((
+        "source",
+        t!("monitor.hardware.source"),
+        if device.integrated {
+            "nvidia-smi / tegrastats / devfreq"
+        } else if device.vendor == Vendor::Ascend {
+            "npu-smi info"
+        } else {
+            "nvidia-smi"
+        }
+        .into(),
+    ));
+    if let Some(metrics) = &device.ascend {
+        for (key, label, kind, status) in [
+            (
+                "ascend-usages",
+                t!("gpu.ascend.usages_query"),
+                "usages",
+                metrics.usages_status,
+            ),
+            (
+                "ascend-memory",
+                t!("gpu.ascend.memory_query"),
+                "memory",
+                metrics.memory_status,
+            ),
+        ] {
+            let status = match status {
+                QueryStatus::Ready => t!("gpu.ascend.ready"),
+                QueryStatus::Unavailable => t!("gpu.ascend.unavailable"),
+                QueryStatus::Failed => t!("gpu.ascend.failed"),
+                QueryStatus::Timeout => t!("gpu.ascend.timeout"),
+                QueryStatus::Invalid => t!("gpu.ascend.invalid"),
+            };
+            fields.push((
+                key,
+                label,
+                format!(
+                    "{status}\nnpu-smi info -t {kind} -i {} -c {}",
+                    metrics.npu, metrics.chip
+                ),
+            ));
+        }
+    }
     if let Some(uuid) = &device.uuid {
         fields.push(("uuid", "UUID".into(), uuid.clone()));
     }
@@ -878,30 +861,18 @@ fn render_details(
     v_flex()
         .id(("gpu-device-details", index as u64))
         .test_support()
-        .pl_4()
-        .pt_1()
-        .gap_1()
-        .text_xs()
+        .min_w_0()
+        .pt_3()
+        .border_t_1()
+        .border_color(cx.theme().border)
+        .gap_3()
         .children(fields.into_iter().map(|(name, label, value)| {
-            h_flex()
-                .gap_2()
-                .child(
-                    div()
-                        .w_20()
-                        .flex_shrink_0()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(label),
-                )
-                .child(
-                    div()
-                        .id(SharedString::from(format!("gpu-detail:{index}:{name}")))
-                        .test_support()
-                        .aria_label(value.clone())
-                        .flex_1()
-                        .min_w_0()
-                        .font_family(cx.theme().mono_font_family.clone())
-                        .child(value),
-                )
+            stacked_detail_row(
+                SharedString::from(format!("gpu-detail:{index}:{name}")).into(),
+                label,
+                value.into(),
+                cx,
+            )
         }))
 }
 
@@ -985,4 +956,281 @@ fn build_context_menu(hit: Option<u32>, menu: PopupMenu) -> PopupMenu {
         Icon::new(CatalogIcon::OctagonX),
         Box::new(EndProcess { pid, force: true }),
     )
+}
+
+/// 统一监控使用的 GPU 展示状态，不拥有采样任务或根滚动容器
+pub(crate) struct GpuCards {
+    scroll_handle: UniformListScrollHandle,
+    all_unfolded: Option<bool>,
+    toggled: HashSet<String>,
+    menu_hit: Rc<Cell<Option<u32>>>,
+    dispatch: FocusHandle,
+    focus_handle: FocusHandle,
+}
+impl GpuCards {
+    pub(crate) fn new(dispatch: FocusHandle, focus_handle: FocusHandle) -> Self {
+        Self {
+            scroll_handle: UniformListScrollHandle::new(),
+            all_unfolded: None,
+            toggled: HashSet::new(),
+            menu_hit: Rc::new(Cell::new(None)),
+            dispatch,
+            focus_handle,
+        }
+    }
+    pub(crate) fn preferences(&self) -> (Option<bool>, HashSet<String>) {
+        (self.all_unfolded, self.toggled.clone())
+    }
+    pub(crate) fn restore(&mut self, all: Option<bool>, toggled: HashSet<String>) {
+        self.all_unfolded = all;
+        self.toggled = toggled;
+    }
+    pub(crate) fn toggle(&mut self, key: &str) {
+        if !self.toggled.remove(key) {
+            self.toggled.insert(key.into());
+        }
+    }
+    pub(crate) fn toggle_all(&mut self, reading: &Reading) {
+        let every = reading
+            .devices
+            .iter()
+            .all(|device| self.unfolded(reading, device));
+        self.all_unfolded = Some(!every);
+        self.toggled.clear();
+    }
+    pub(crate) fn header(reading: &Reading, cx: &App) -> impl IntoElement {
+        let mut summary = tn!("gpu.panel.summary", reading.devices.len()).to_string();
+        if let Some(uptime) = reading.uptime {
+            summary += &format!(
+                " · {}",
+                t!("gpu.panel.uptime", duration = format_duration(uptime))
+            );
+        }
+        let about = [
+            reading.model().map(str::to_owned),
+            (!reading.drivers.is_empty())
+                .then(|| t!("gpu.panel.driver", version = reading.drivers.join(", ")).to_string()),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" · ");
+        v_flex()
+            .gap_1()
+            .child(
+                div()
+                    .id("gpu-model")
+                    .test_support()
+                    .aria_label(about.clone())
+                    .text_sm()
+                    .child(about),
+            )
+            .child(
+                div()
+                    .id("gpu-summary")
+                    .test_support()
+                    .aria_label(summary.clone())
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(summary),
+            )
+            .when(!reading.errors.is_empty(), |panel| {
+                panel.child(
+                    div()
+                        .id("gpu-errors")
+                        .test_support()
+                        .aria_label(reading.errors.join("\n"))
+                        .text_xs()
+                        .text_color(cx.theme().danger)
+                        .child(reading.errors.join("\n")),
+                )
+            })
+    }
+    pub(crate) fn overview(reading: &Reading, cx: &App) -> impl IntoElement {
+        render_overview(reading, cx)
+    }
+    fn unfolded(&self, _reading: &Reading, device: &Device) -> bool {
+        let all = self.all_unfolded.unwrap_or(false);
+        all != self.toggled.contains(&device.key)
+    }
+
+    pub(crate) fn render_devices(&self, reading: &Reading, cx: &App) -> impl IntoElement + use<> {
+        let every = reading
+            .devices
+            .iter()
+            .all(|device| self.unfolded(reading, device));
+        let (label, icon) = if every {
+            (
+                t!("gpu.devices.fold_all"),
+                Icon::new(CatalogIcon::ChevronsDownUp),
+            )
+        } else {
+            (
+                t!("gpu.devices.unfold_all"),
+                Icon::new(IconName::ChevronsUpDown),
+            )
+        };
+        let dispatch = self.dispatch.clone();
+        v_flex()
+            .id("gpu-devices")
+            .test_support()
+            .gap_3()
+            .child(
+                h_flex()
+                    .gap_2()
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_weight(FontWeight::MEDIUM)
+                            .child(t!("gpu.devices.title")),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(reading.devices.len().to_string()),
+                    )
+                    // With one device there is nothing to do all at once.
+                    .when(reading.devices.len() > 1, |header| {
+                        header.child(
+                            Button::new("gpu-devices-fold")
+                                .ghost()
+                                .xsmall()
+                                .icon(icon)
+                                .label(label)
+                                .on_click(move |_, window, cx| {
+                                    dispatch.dispatch_action(&ToggleAllGpuDevices, window, cx)
+                                }),
+                        )
+                    }),
+            )
+            // One model for all of them is in the header already.
+            .children(reading.devices.iter().enumerate().map(|(index, device)| {
+                div()
+                    .id(SharedString::from(format!("gpu-device:{}", device.key)))
+                    .child(render_device(
+                        index,
+                        device,
+                        self.unfolded(reading, device),
+                        &self.dispatch,
+                        cx,
+                    ))
+            }))
+    }
+
+    pub(crate) fn render_processes(
+        &self,
+        reading: &Reading,
+        virtualized: bool,
+        cx: &App,
+    ) -> impl IntoElement + use<> {
+        let clear_hit = self.menu_hit.clone();
+        let menu_hit = self.menu_hit.clone();
+        v_flex()
+            .id("gpu-processes")
+            .test_support()
+            .when(virtualized, |list| {
+                list.flex_1()
+                    .min_h_0()
+                    .vertical_scrollbar(&self.scroll_handle)
+            })
+            .gap_1()
+            .child(
+                h_flex()
+                    .gap_2()
+                    .child(
+                        div()
+                            .flex_1()
+                            .text_sm()
+                            .font_weight(FontWeight::MEDIUM)
+                            .child(t!("gpu.processes.title")),
+                    )
+                    .child(
+                        div()
+                            .id("gpu-processes-count")
+                            .test_support()
+                            .aria_label(reading.processes.len().to_string())
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(reading.processes.len().to_string()),
+                    ),
+            )
+            .map(|list| {
+                if reading.processes.is_empty() {
+                    let text = t!("gpu.processes.empty");
+                    list.child(
+                        div()
+                            .id("gpu-no-processes")
+                            .test_support()
+                            .aria_label(text.clone())
+                            .py_2()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(text),
+                    )
+                } else if virtualized {
+                    let reading = Rc::new(reading.clone());
+                    let hit = self.menu_hit.clone();
+                    let focus = self.focus_handle.clone();
+                    list.child(
+                        uniform_list(
+                            "gpu-process-rows",
+                            reading.processes.len(),
+                            move |range, _, cx| {
+                                range
+                                    .map(|index| {
+                                        let process = &reading.processes[index];
+                                        let device = process
+                                            .device
+                                            .and_then(|index| reading.devices.get(index));
+                                        div()
+                                            .id(SharedString::from(format!(
+                                                "gpu-process:{}:{}",
+                                                device.map_or("unknown", |device| device
+                                                    .key
+                                                    .as_str()),
+                                                process.pid
+                                            )))
+                                            .pb_1()
+                                            .child(render_process(
+                                                process,
+                                                device
+                                                    .map_or("—", |device| device.label.as_str()),
+                                                hit.clone(),
+                                                focus.clone(),
+                                                cx,
+                                            ))
+                                    })
+                                    .collect::<Vec<_>>()
+                            },
+                        )
+                        .flex_1()
+                        .min_h_0()
+                        .track_scroll(&self.scroll_handle),
+                    )
+                } else {
+                    list.children(reading.processes.iter().map(|process| {
+                        let device = process
+                            .device
+                            .and_then(|index| reading.devices.get(index))
+                            .map_or("—", |device| device.label.as_str());
+                        render_process(
+                            process,
+                            device,
+                            self.menu_hit.clone(),
+                            self.focus_handle.clone(),
+                            cx,
+                        )
+                    }))
+                }
+            })
+            // The menu hangs off the list, not off the rows, as in 进程管理.
+            .capture_any_mouse_down(move |event, _, _| {
+                if matches!(event.button, MouseButton::Left | MouseButton::Right) {
+                    clear_hit.set(None);
+                }
+            })
+            .context_menu(move |menu, _, _| build_context_menu(menu_hit.get(), menu))
+    }
 }

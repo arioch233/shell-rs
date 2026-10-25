@@ -92,7 +92,10 @@ icon_assets!(
         GripVertical,
         FileSearch,
         SquareDashedText,
-        CopyPlus
+        CopyPlus,
+        Settings2,
+        ScanLine,
+        Thermometer
     ]
 );
 

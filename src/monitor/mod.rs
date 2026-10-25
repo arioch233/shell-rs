@@ -2,7 +2,22 @@
 //! and disks of the host of the SSH terminal in front, read over that
 //! terminal's own connection. Linux hosts only, for now.
 
+mod access;
+mod access_dialog;
+mod collectors;
+pub(crate) use access_dialog::open_access_dialog;
+mod controller;
+mod dvpp;
+mod dvpp_cards;
+mod hardware_cards;
 mod linux;
+mod mpp;
+mod mpp_cards;
+mod scheduler;
+mod snapshot;
+mod tegra;
+mod tegra_cards;
+pub use snapshot::{CollectorDomain, MonitorPage, MonitorPreferences};
 mod model;
 mod monitor_panel;
 

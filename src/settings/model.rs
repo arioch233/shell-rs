@@ -31,6 +31,8 @@ pub struct AppSettings {
     pub terminal_interaction: TerminalInteraction,
     /// 终端 → 侧栏功能: which tools the right sidebar offers.
     pub sidebar_tools: SidebarTools,
+    /// 已保存主机的监控展示偏好，按持久标识隔离
+    pub monitor: BTreeMap<String, crate::monitor::MonitorPreferences>,
     /// The right sidebar beside local terminals, switched from its tool
     /// buttons: the tool it shows, `None` while hidden. One for every local
     /// terminal, as a host keeps its own for its terminals.
@@ -136,17 +138,25 @@ pub struct SidebarTools(BTreeMap<String, bool>);
 impl<'de> Deserialize<'de> for SidebarTools {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let values = BTreeMap::<String, serde_json::Value>::deserialize(deserializer)?;
-        Ok(Self(
+        let mut tools = Self(
             values
                 .into_iter()
                 .filter_map(|(key, value)| Some((key, value.as_bool()?)))
                 .collect(),
-        ))
+        );
+        if let Some(gpu) = tools.0.remove("gpu") {
+            let visible = tools.0.get("monitor").copied().unwrap_or(true) || gpu;
+            tools.set(ToolKind::Monitor, visible);
+        }
+        Ok(tools)
     }
 }
 
 impl SidebarTools {
     pub fn shows(&self, tool: ToolKind) -> bool {
+        if tool == ToolKind::Gpu {
+            return false;
+        }
         self.0
             .get(tool.key())
             .copied()
@@ -155,6 +165,12 @@ impl SidebarTools {
 
     /// Offer `tool`, or not. Its default is stored as no change.
     pub fn set(&mut self, tool: ToolKind, shown: bool) {
+        let tool = if tool == ToolKind::Gpu {
+            ToolKind::Monitor
+        } else {
+            tool
+        };
+        self.0.remove("gpu");
         if shown == tool.shown_by_default() {
             self.0.remove(tool.key());
         } else {
@@ -725,14 +741,11 @@ mod tests {
         assert!(!tools.is_default());
         assert_eq!(
             serde_json::to_value(&tools).unwrap(),
-            serde_json::json!({"docker": false, "gpu": true})
+            serde_json::json!({"docker": false})
         );
         // Back to its default is no change at all.
         tools.set(ToolKind::Docker, true);
-        assert_eq!(
-            serde_json::to_value(&tools).unwrap(),
-            serde_json::json!({"gpu": true})
-        );
+        assert_eq!(serde_json::to_value(&tools).unwrap(), serde_json::json!({}));
         tools.reset();
         assert_eq!(tools, SidebarTools::default());
 
@@ -743,12 +756,13 @@ mod tests {
         )
         .unwrap();
         let tools = settings.sidebar_tools;
-        assert!(tools.shows(ToolKind::Gpu));
+        assert!(tools.shows(ToolKind::Monitor));
+        assert!(!tools.shows(ToolKind::Gpu));
         assert!(tools.shows(ToolKind::Docker));
         assert!(!tools.shows(ToolKind::History));
         assert_eq!(
             serde_json::to_value(&tools).unwrap(),
-            serde_json::json!({"gpu": true, "history": false, "k8s": true})
+            serde_json::json!({"history": false, "k8s": true})
         );
         let mut tools = tools;
         tools.reset();
@@ -758,6 +772,28 @@ mod tests {
             serde_json::json!({"k8s": true}),
             "not this version's to reset"
         );
+    }
+
+    #[test]
+    fn legacy_monitor_visibility_combines_all_missing_and_boolean_values() {
+        for monitor in [None, Some(false), Some(true)] {
+            for gpu in [None, Some(false), Some(true)] {
+                let mut values = serde_json::Map::new();
+                if let Some(value) = monitor {
+                    values.insert("monitor".into(), value.into());
+                }
+                if let Some(value) = gpu {
+                    values.insert("gpu".into(), value.into());
+                }
+                let tools: SidebarTools = serde_json::from_value(values.into()).unwrap();
+                assert_eq!(
+                    tools.shows(ToolKind::Monitor),
+                    monitor.unwrap_or(true) || gpu.unwrap_or(false)
+                );
+                assert!(!tools.shows(ToolKind::Gpu));
+                assert!(serde_json::to_value(tools).unwrap().get("gpu").is_none());
+            }
+        }
     }
 
     /// The sidebar beside local terminals: hidden until opened, by key in
@@ -780,7 +816,7 @@ mod tests {
             ))
             .unwrap();
             assert_eq!(read.local_sidebar_tool, None, "{stray}");
-            assert!(read.sidebar_tools.shows(ToolKind::Gpu));
+            assert!(read.sidebar_tools.shows(ToolKind::Monitor));
         }
     }
 

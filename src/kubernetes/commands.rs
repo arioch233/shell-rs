@@ -22,11 +22,7 @@ pub(super) fn remote(command: &str) -> String {
     );
     // The login shell may be fish or csh. Encode the script so the outer
     // single-quoted argument has neither nested quotes nor history `!`.
-    let encoded = script
-        .bytes()
-        .map(|byte| format!("\\0{byte:03o}"))
-        .collect::<String>();
-    format!("sh -c 'printf \"%b\" \"{encoded}\" | sh'")
+    crate::terminal::shell_script(&script)
 }
 
 /// sshd hands a command to the login shell as one argument, which Linux caps
@@ -54,11 +50,7 @@ pub(super) fn remote_data(command: &str) -> String {
     let script = format!(
         "export LC_ALL=C PATH=\"$PATH:/usr/local/bin:/opt/homebrew/bin\"; if command -v gzip >/dev/null 2>&1 && command -v base64 >/dev/null 2>&1; then printf '{COMPRESSED}'; {{ {framed}; }} | gzip -1 -c | base64; else {framed}; fi"
     );
-    let encoded = script
-        .bytes()
-        .map(|byte| format!("\\0{byte:03o}"))
-        .collect::<String>();
-    format!("sh -c 'printf \"%b\" \"{encoded}\" | sh'")
+    crate::terminal::shell_script(&script)
 }
 
 #[derive(Debug)]

@@ -1,0 +1,19 @@
+@@node /proc/pressure/cpu ready
+some avg10=0.12 avg60=0.11 avg300=0.07 total=4643372472
+full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+
+@@status 0
+@@endnode
+@@node /proc/pressure/memory ready
+some avg10=0.00 avg60=0.00 avg300=0.00 total=0
+full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+
+@@status 0
+@@endnode
+@@node /proc/pressure/io ready
+some avg10=2.93 avg60=3.07 avg300=2.78 total=38520779153
+full avg10=2.93 avg60=3.04 avg300=2.75 total=37958369546
+
+@@status 0
+@@endnode
+@@complete

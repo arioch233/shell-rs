@@ -1,0 +1,80 @@
+@@node /proc/umap/vdec ready
+[VDEC] Version: [HiDVPP]
+----- CHN COMM ATTR & PARAMS ------------------
+ ID TYPE Width Height StrBufSize FrmBufCnt
+ 3 H265 1920 1080 2097152 8
+----- CHN STATE ------------------------------
+ ID fps Sendfps DataLen
+ 3 24.5 25 8192
+ ID PrtclErr StrmError PicSizeErr
+ 3 0 1 0
+----- Detail Stream STATE --------------------
+ ID MpiSndNum VdecNum FmGetNum FmRlsNum
+ 3 1020 1000 999 998
+----- Detail Vdec Cost Time ------------------
+ ID AveTask(us) MaxTask(us) MinTask(us)
+ 3 2300 4800 1800
+----- Detail Vdec Chn Id Info ----------------
+ ID UserChnId VFID Pid
+ 3 12 0 2100
+@@endnode
+@@node /proc/umap/venc ready
+[VENC] Version: [HiDVPP]
+-----VENC CHN ATTR 1--------------------------
+ ID Height Width Type LeftBytes LeftFrm
+ 3 2160 3840 H264 4096 2
+-----VENC CHN ATTR 2--------------------------
+ ID SrcFr TarFr
+ 3 30 25
+-----VENC STREAM STATE------------------------
+ ID FreeCnt BusyCnt UserCnt UserGet UserRls GetTimes Interval FrameRate
+ 3 4 2 1 995 994 1000 40 24.75
+-----VENC TASK COST TIME----------------------
+ ID MaxTask(us) MinTask(us) AveTask(us)
+ 3 8000 2000 4200
+-----Detail Venc Chn Id Info------------------
+ ID UserChnId VFID Pid
+ 3 7 0 2200
+@@endnode
+@@node /proc/umap/rc ready
+[RC] Version: [HiDVPP]
+------BASE PARAMS 1---------------------------
+ ChnId Gop StatTm ViFr TrgFr ProType RcMode Br(kbps)
+ 3 50 1 30 25/1 H264 VBR 8000
+-----RUN INFO1-------------------------------
+ ChnId InsBr(kbps) InsFr WatL
+ 3 7530 24.75 0
+@@endnode
+@@node /proc/umap/h264e ready
+[H264E] Version: [HiDVPP]
+-----CHN ATTR--------------------------------
+ ID Width Height
+ 3 3840 2160
+-----PICTURE INFO----------------------------
+ ID EncStart EncSucceed Lost Disc Recode
+ 3 1000 998 0 1 2
+@@endnode
+@@node /proc/umap/h265e ready
+[H265E] Version: [HiDVPP]
+-----CHN ATTR--------------------------------
+ ID Width Height
+@@endnode
+@@node /proc/umap/vpc ready
+ VPC PROC
+----- CHN PIC ATTR & PARAMS ------------------
+ ID input_fmt input_w input_h input_stride output_fmt output_w output_h output_stride task_id
+ 1 YUV420 1920 1080 1920 RGB 640 640 1920 19
+----- CHN FUNC ATTR & PARAMS -----------------
+ ID Func_type count int_status general_mem/byte vpc_mem/byte
+ 1 resize 1 0 4096 0
+----- CHN QUEUE STATUS -----------------------
+ ID free_queue working_queue event_queue
+ 1 4 2 0
+----- Detail Vpc Cost Time -------------------
+ ID MaxTask(us) MinTask(us) AveTask(us) SendFrameRate(fps)
+ 1 900 300 450 25
+----- Detail Vpc Chn Id Info -----------------
+ ID UserChnId VFID Pid ChnStatus
+ 1 4 0 2200 1
+@@endnode
+@@complete

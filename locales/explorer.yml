@@ -1,5 +1,9 @@
 _version: 2
 
+explorer.drag.start_failed:
+  zh-CN: "无法拖出下载：%{error}"
+  en: "Could not start dragging files: %{error}"
+
 # The SFTP tab: the two file lists, their toolbars and menus, the dialogs
 # they open, the transfer queue and the preview.
 

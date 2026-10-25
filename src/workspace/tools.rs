@@ -76,6 +76,167 @@ impl ToolTarget {
 pub(super) const TOOL_SIDEBAR_WIDTH: Pixels = px(320.);
 
 impl Workspace {
+    pub(super) fn on_configure_monitor_access(
+        &mut self,
+        _: &crate::app::ConfigureMonitorAccess,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(terminal) = self
+            .tool_terminal(cx)
+            .filter(|terminal| !terminal.shell_only)
+        else {
+            return;
+        };
+        let Some(view) = terminal.view.upgrade() else {
+            return;
+        };
+        let generation = view.read(cx).generation(cx);
+        let target = crate::terminal::ExecTarget {
+            terminal: terminal.id,
+            view: terminal.view.clone(),
+        };
+        let workspace = cx.entity().downgrade();
+        crate::monitor::open_access_dialog(
+            terminal.name.clone(),
+            target,
+            generation,
+            Rc::new(move |window, cx| {
+                let _ = workspace.update(cx, |workspace, cx| {
+                    let current = workspace.tool_terminal(cx);
+                    if current.as_ref().is_some_and(|current| {
+                        current.id == terminal.id && current.view == terminal.view
+                    }) && terminal
+                        .view
+                        .upgrade()
+                        .is_some_and(|view| view.read(cx).generation(cx) == generation)
+                    {
+                        workspace.on_set_monitor_sudo(
+                            &crate::app::SetMonitorSudo(true),
+                            window,
+                            cx,
+                        );
+                        workspace.on_refresh_monitor(
+                            &crate::app::RefreshMonitor(Some(
+                                crate::monitor::CollectorDomain::Probe,
+                            )),
+                            window,
+                            cx,
+                        );
+                        window.push_notification(
+                            Notification::success(t!("monitor.access.ready")),
+                            cx,
+                        );
+                    } else {
+                        window.push_notification(
+                            Notification::info(t!("monitor.access.completed_elsewhere")),
+                            cx,
+                        );
+                    }
+                });
+            }),
+            window,
+            cx,
+        );
+    }
+
+    fn save_monitor_preferences(&mut self, cx: &mut Context<Self>) {
+        let Some(terminal) = self.tool_terminal(cx) else {
+            return;
+        };
+        let store = self.store.read(cx);
+        if store.is_temporary(terminal.host) {
+            return;
+        }
+        let Some(host) = store.host(terminal.host) else {
+            return;
+        };
+        let key = host.public_id.to_string();
+        let preferences = self
+            .tools
+            .read(cx)
+            .monitor()
+            .read(cx)
+            .persistent_preferences();
+        self.settings().update(cx, |store, cx| {
+            store.update(
+                |settings| {
+                    settings.monitor.insert(key, preferences);
+                },
+                cx,
+            )
+        });
+    }
+    pub(super) fn on_set_monitor_settings(
+        &mut self,
+        action: &crate::app::SetMonitorSettings,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.tools
+            .read(cx)
+            .monitor()
+            .update(cx, |panel, cx| panel.set_settings_open(action.0, cx));
+    }
+    pub(super) fn on_set_monitor_sudo(
+        &mut self,
+        action: &crate::app::SetMonitorSudo,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.tools
+            .read(cx)
+            .monitor()
+            .update(cx, |panel, cx| panel.set_allow_sudo(action.0, cx));
+        self.save_monitor_preferences(cx);
+    }
+    pub(super) fn on_select_monitor_page(
+        &mut self,
+        action: &crate::app::SelectMonitorPage,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.tools
+            .read(cx)
+            .monitor()
+            .update(cx, |panel, cx| panel.select_page(action.0, cx));
+        self.save_monitor_preferences(cx);
+    }
+    pub(super) fn on_refresh_monitor(
+        &mut self,
+        action: &crate::app::RefreshMonitor,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.tools
+            .read(cx)
+            .monitor()
+            .update(cx, |panel, cx| panel.refresh(action.0, cx));
+    }
+    pub(super) fn on_toggle_monitor_metric(
+        &mut self,
+        action: &crate::app::ToggleMonitorMetric,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.tools
+            .read(cx)
+            .monitor()
+            .update(cx, |panel, cx| panel.toggle_metric(&action.0, cx));
+        self.save_monitor_preferences(cx);
+    }
+    pub(super) fn on_select_monitor_processes(
+        &mut self,
+        action: &crate::app::SelectMonitorProcesses,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.tools
+            .read(cx)
+            .monitor()
+            .update(cx, |panel, cx| panel.select_processes(action.0, cx));
+        self.save_monitor_preferences(cx);
+    }
     pub(super) fn on_kubernetes_action(
         &mut self,
         action: &crate::app::KubernetesAction,
@@ -156,7 +317,8 @@ impl Workspace {
                 ToolKind::ALL
                     .into_iter()
                     .filter(|tool| {
-                        !tool.is_local()
+                        *tool != ToolKind::Gpu
+                            && !tool.is_local()
                             && shown.shows(*tool)
                             && tool.works_on(os)
                             && !(shell_only && tool.runs_commands())
@@ -185,6 +347,7 @@ impl Workspace {
     ) {
         self.tools
             .update(cx, |tools, cx| tools.toggle_all_gpu_devices(cx));
+        self.save_monitor_preferences(cx);
     }
 
     /// A click on a device of GPU/NPU: its details, or no more.
@@ -197,6 +360,7 @@ impl Workspace {
         let key = action.0.clone();
         self.tools
             .update(cx, |tools, cx| tools.toggle_gpu_device(&key, cx));
+        self.save_monitor_preferences(cx);
     }
 
     /// The tool the right sidebar is showing, `None` while it is hidden.
@@ -236,20 +400,30 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let tool = action.0;
+        let tool = if action.0 == ToolKind::Gpu {
+            ToolKind::Monitor
+        } else {
+            action.0
+        };
         let Some(target) = self.sidebar_target(cx) else {
             return;
         };
         if !self.offered_tools(cx).contains(&tool) {
             return;
         }
-        if self.tool_showing(cx) == Some(tool) {
+        if self.tool_showing(cx) == Some(tool) && action.0 != ToolKind::Gpu {
             self.remember_target_tool(&target, None, cx);
         } else {
             self.remember_target_tool(&target, Some(tool), cx);
             self.count_tool(tool);
         }
         self.sync_tool_sidebar(window, cx);
+        if action.0 == ToolKind::Gpu {
+            self.tools.read(cx).monitor().update(cx, |panel, cx| {
+                panel.select_page(crate::monitor::MonitorPage::Hardware, cx)
+            });
+            self.save_monitor_preferences(cx);
+        }
     }
 
     /// The right sidebar's tool as the terminal in front had it last,
@@ -281,7 +455,13 @@ impl Workspace {
     /// while hidden.
     fn host_tool(&self, host: HostId, cx: &App) -> Option<ToolKind> {
         match self.store.read(cx).host(host) {
-            Some(host) => host.sidebar_tool,
+            Some(host) => host.sidebar_tool.map(|tool| {
+                if tool == ToolKind::Gpu {
+                    ToolKind::Monitor
+                } else {
+                    tool
+                }
+            }),
             None => self.deleted_host_tools.get(&host).copied(),
         }
     }
@@ -326,6 +506,7 @@ impl Workspace {
         let detail = action.0;
         self.tools
             .update(cx, |tools, cx| tools.toggle_monitor_detail(detail, cx));
+        self.save_monitor_preferences(cx);
     }
 
     /// 网络连接's 刷新: read the host's sockets again.
@@ -704,6 +885,12 @@ impl Workspace {
         let Some(terminal) = self.tool_terminal(cx) else {
             return;
         };
+        let Some(view) = terminal.view.upgrade() else {
+            return;
+        };
+        let generation = view.read(cx).generation(cx);
+        let source = self.tools.read(cx).process_domain(cx);
+        let terminal_id = terminal.id;
         let EndProcess { pid, force } = *action;
         let Some((name, user)) = self.tools.read(cx).process_label(pid, cx) else {
             return;
@@ -731,6 +918,13 @@ impl Workspace {
                 let Some(view) = terminal.view.upgrade() else {
                     return;
                 };
+                if view.read(cx).generation(cx) != generation {
+                    window.push_notification(
+                        Notification::error(t!("monitor.connection_changed")),
+                        cx,
+                    );
+                    return;
+                }
                 let Some(reply) = view.read(cx).exec(end_command(pid, force), cx) else {
                     window.push_notification(
                         Notification::error(t!(
@@ -773,8 +967,14 @@ impl Workspace {
                             window.push_notification(notification, cx);
                             workspace
                                 .update(cx, |this, cx| {
-                                    this.tools
-                                        .update(cx, |tools, cx| tools.refresh_processes_soon(cx))
+                                    this.tools.update(cx, |tools, cx| {
+                                        tools.refresh_process_target(
+                                            terminal_id,
+                                            generation,
+                                            source,
+                                            cx,
+                                        )
+                                    })
                                 })
                                 .ok();
                         })
@@ -816,6 +1016,33 @@ impl Workspace {
     /// turns out to run something else.
     pub(super) fn sync_tool_sidebar(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let target = self.sidebar_target(cx);
+        let monitor = self.tools.read(cx).monitor();
+        let open_terminals: Vec<_> = self.terminals.keys().copied().collect();
+        monitor.update(cx, |panel, cx| panel.retain(&open_terminals, cx));
+        if let Some(SidebarTarget::Remote(terminal)) = &target
+            && let Some(host) = self.store.read(cx).host(terminal.host)
+        {
+            let key = host.public_id.to_string();
+            let legacy = host.sidebar_tool == Some(ToolKind::Gpu);
+            let mut preferences = self
+                .settings()
+                .read(cx)
+                .settings()
+                .monitor
+                .get(&key)
+                .cloned()
+                .unwrap_or_default();
+            if legacy {
+                preferences.page = crate::monitor::MonitorPage::Hardware;
+            }
+            monitor.update(cx, |panel, cx| {
+                panel.restore_preferences(key, preferences, cx)
+            });
+            if legacy {
+                self.save_monitor_preferences(cx);
+                self.remember_host_tool(terminal.host, Some(ToolKind::Monitor), cx);
+            }
+        }
         let tool = target
             .as_ref()
             .and_then(|target| self.target_tool(target, cx))

@@ -14,6 +14,7 @@ mod connection;
 mod credential;
 mod docker;
 mod editor;
+mod file_drag;
 mod file_sidebar;
 mod forward;
 mod gpu;

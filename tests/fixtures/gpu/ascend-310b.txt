@@ -1,0 +1,22 @@
+@@npu
+| npu-smi 5.1.rc2.b021                             Version: 23.0.0                                       |
+| NPU     Name                  | Health          | Power(W)     Temp(C)           Hugepages-Usage(page) |
+| Chip    Device                | Bus-Id          | AICore(%)    Memory-Usage(MB)                        |
+| 0       310B1                 | OK              | 4.7          45                15    / 15            |
+| 0       0                     | NA              | 0            1467 / 11578                            |
+@@status 0
+@@ascend/0/0/usages
+Memory Capacity(MB)            : 11578
+Memory Usage Rate(%)           : 12
+Hugepages Total(page)          : 15
+Hugepages Usage Rate(%)        : 100
+Aicore Usage Rate(%)           : 0
+Aicpu Usage Rate(%)            : 0
+Ctrlcpu Usage Rate(%)          : 3
+Memory Bandwidth Usage Rate(%) : 1
+@@status 0
+@@ascend/0/0/memory
+Capacity(MB)                   : 11578
+Clock Speed(MHz)               : 2131
+@@status 0
+@@end
