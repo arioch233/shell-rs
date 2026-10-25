@@ -1,8 +1,11 @@
 //! Every user command, so toolbar buttons, menus and key bindings dispatch
 //! the same action and cannot disagree.
 
+use std::path::PathBuf;
+
 use gpui_kit::component::{Icon, IconName};
 use gpui_kit::*;
+use shellrs_sync::DeviceId;
 
 use super::{CatalogIcon, DOCKER_ICON};
 use crate::i18n::t;
@@ -211,6 +214,28 @@ gpui_kit::actions!(
         OpenChangelog,
         /// Open the ShellRS website.
         OpenWebsite,
+        /// 开启同步 › 选择文件夹…: pick the folder to sync through, then make
+        /// sync there or join it.
+        SetUpSync,
+        /// 开启同步 › 连接 WebDAV…: name the server and the login, then make
+        /// sync there or join it.
+        SetUpWebDavSync,
+        /// 开启同步 › 连接 S3…: name the bucket and its keys, then make sync
+        /// there or join it.
+        SetUpS3Sync,
+        /// Sign in anew to the WebDAV server or bucket sync goes through.
+        ChangeSyncLogin,
+        /// Run a round of sync now.
+        SyncNow,
+        /// Open what sync waits for the user to settle: a password, a
+        /// reset, deletions to agree to.
+        ReviewSync,
+        /// Open 更换同步密码.
+        ChangeSyncPassword,
+        /// Open 更换同步密码和密钥.
+        RotateSyncKey,
+        /// Open 关闭同步.
+        TurnOffSync,
     ]
 );
 
@@ -278,6 +303,13 @@ id_actions! {
     CloseEditor(EditorId);
     /// Open the dialog that gives one SFTP tab its own title.
     RenameExplorer(ExplorerId);
+
+    /// Make sync in this folder, or join the sync there: what the folder
+    /// picker of 开启同步… chose.
+    SetUpSyncIn(PathBuf);
+    /// Ask first, then take a device out of sync: its file in the folder
+    /// goes.
+    RemoveSyncDevice(DeviceId);
 
     /// Install (or update) the agent skill for one agent.
     InstallAgentSkill(AgentKind);
