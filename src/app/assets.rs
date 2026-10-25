@@ -95,7 +95,8 @@ icon_assets!(
         CopyPlus,
         Settings2,
         ScanLine,
-        Thermometer
+        Thermometer,
+        CloudSync
     ]
 );
 
