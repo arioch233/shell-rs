@@ -48,7 +48,47 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - "rust-toolchain.toml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/cli/**"
+      - "src/analytics/**"
+      - "src/update/**"
+      - "src/app/mod.rs"
+      - "src/app/paths.rs"
+      - "src/host/private_key.rs"
+      - "src/app/window_hiding.rs"
+      - "src/app/system_hotkey.rs"
+      - "src/main.rs"
+      - "src/bin/**"
+      - "src/ssh/connection.rs"
+      - "src/ssh/probe.rs"
+      - "src/ssh/transport.rs"
+      - "tests/ui/connection.rs"
+      - "src/sftp/download.rs"
+      - "src/sftp/model.rs"
+      - "src/sftp/upload.rs"
+      - "src/sftp/sync.rs"
+      - "src/credential/credential_dialog.rs"
+      - "src/settings/model.rs"
+      - "src/settings/settings_panel.rs"
+      - "src/terminal/local_shell.rs"
+      - "src/terminal/local_pty.rs"
+      - "src/project/project_panel.rs"
+      - "src/terminal/zmodem.rs"
+      - "src/serial/**"
+      - "src/app/shortcuts.rs"
+      - "src/workspace/window_state.rs"
+      - "src/testing.rs"
+      - "tests/cli_bin.rs"
+      - "build.rs"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   cli:

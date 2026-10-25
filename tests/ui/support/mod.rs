@@ -62,12 +62,14 @@ pub use std::time::Duration;
 
 mod connection;
 mod credential;
+mod file_drag;
 mod forward;
 mod sftp;
 mod terminal;
 
 pub use connection::*;
 pub use credential::*;
+pub use file_drag::*;
 pub use forward::*;
 pub use sftp::*;
 pub use terminal::*;

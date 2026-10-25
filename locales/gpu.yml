@@ -106,3 +106,55 @@ gpu.error.timed_out:
 gpu.error.status:
   zh-CN: "%{tool} 出错退出（状态 %{status}）。"
   en: "%{tool} exited with status %{status}."
+
+gpu.devices.ai_core:
+  zh-CN: AI Core 利用率
+  en: AI Core utilization
+gpu.devices.npu_memory:
+  zh-CN: NPU 内存
+  en: NPU memory
+
+gpu.devices.shared_memory:
+  zh-CN: 与 CPU 共享系统内存，用量见概览
+  en: Shares system memory with the CPU; see Overview for usage
+
+gpu.error.format:
+  zh-CN: "%{tool} 未返回可识别的 GPU 读数"
+  en: "%{tool} returned no recognizable GPU readings"
+
+gpu.ascend.ai_cpu:
+  zh-CN: AI CPU 利用率
+  en: AI CPU utilization
+gpu.ascend.control_cpu:
+  zh-CN: 控制 CPU 利用率
+  en: Control CPU utilization
+gpu.ascend.memory_bandwidth:
+  zh-CN: 内存带宽利用率
+  en: Memory bandwidth utilization
+gpu.ascend.memory_frequency:
+  zh-CN: 内存频率
+  en: Memory clock
+gpu.ascend.partial:
+  zh-CN: 部分扩展指标未获取，原因见采集详情
+  en: Some extended metrics are unavailable; see collection details
+gpu.ascend.usages_query:
+  zh-CN: CPU 与内存带宽采集
+  en: CPU and memory bandwidth query
+gpu.ascend.memory_query:
+  zh-CN: 内存频率采集
+  en: Memory clock query
+gpu.ascend.ready:
+  zh-CN: 已获取
+  en: Available
+gpu.ascend.unavailable:
+  zh-CN: 未提供
+  en: Unavailable
+gpu.ascend.failed:
+  zh-CN: 查询失败
+  en: Query failed
+gpu.ascend.timeout:
+  zh-CN: 查询超时
+  en: Query timed out
+gpu.ascend.invalid:
+  zh-CN: 字段缺失或格式异常
+  en: Missing or invalid fields

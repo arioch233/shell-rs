@@ -1,0 +1,361 @@
+@@node /proc/umap/vdec ready
+
+[VDEC] Version: [HiDVPP]
+
+[VDEC] Memory Usage: 0
+----- MODULE PARAM -----------------------------------------------------------------------------------------------------
+  VdecMaxChnNum  MiniBufMode  enVdecVBSource    ParallelMode
+            128            0               2               0
+  MaxPicWidth  MaxPicHeight  MaxSliceNum  VdhMsgNum   VdhBinSize  VdhExtMemLevel
+         8192          8192          600          1         2048               1
+  MaxJpegdWidth  MaxJpegdHeight  SupportProgressive     DynamicAllocate         CapStrategy
+          16384           16384                   0                   0                   0
+
+----- CHN COMM ATTR & PARAMS -------------------------------------------------------------------------------------------
+  ID   TYPE   MaxW   MaxH   Width  Height    StrInputMode   StrBufSize   FrmBufSize    FrmBufCnt   TmvBufSize     VdecMemCnt
+  ID  DispNum  DispMode  SetUserPic  EnUserPic  PicPoolId  TmvPoolId   STATE
+
+----- CHN VIDEO ATTR & PARAMS ------------------------------------------------------------------------------------------
+  ID  VfmwID  RefNum  TemporalMvp  ErrThr  DecMode  OutPutOrder  Compress  VideoFormat  MaxVPS  MaxSPS  MaxPPS  MaxSlice
+
+----- CHN PICTURE ATTR & PARAMS ----------------------------------------------------------------------------------------
+  ID  PixelFormat   Alpha  PrecisionMode
+
+----- CHN STATE --------------------------------------------------------------------------------------------------------
+  ID  PrtclErr  StrmUnSP StrmError RefNumErr  PicSizeErr  Fmterror  PicBufSizeErr StrSizeOver    Notify  UniqueId  State
+  ID  fps  Sendfps  TimerCnt   BufFLen   DataLen  RdRegionLen  SCDLeftLen  WrRegionLen  ptsBufF  ptsBufU StreamEnd FrameEnd
+  ID   CreateChnTimes    ResetChnTimes  destroyChnTimes   DeploymentMode   VobSize   VobIdle  VobAlloc   VobFree
+
+----- Detail Stream STATE ----------------------------------------------------------------------------------------------
+  ID MpiSndNum             MpiSndLen   VdecNum   VdecLen  FmGetTry  FmGetNum              FmGetLen  FmRlsNum              FmRlsLen
+  ID  FmLstGet  FmRlsFail
+
+----- Detail FrameStore STATE ------------------------------------------------------------------------------------------
+  ID  FmNewPic GetFromFm   Discard    NoDisp    UsrSnd    KerSnd    KerRls   MeetEnd   FrmInVdec      InvFrm  DynamicRange  ColorGamut
+  ID  FreeNode  VfmwNode   VpcNode VpcWorkingNode  BusyNode  UserNode    RefNum  IsAvalible   VbCnt  MaxVbCnt     VpcVbCnt
+  ID   GetPicVbFail   GetTmvVbFail     GetVpcVbFail        PicSize        TmvSize        VpcSize           CurPicPts
+  ID      SubmitVpc     VpcSuccess        VpcFail      SubmitErr
+  ID     NeedFrameAdapte  FrameAdapteSuccess     NotifyACLFrameAdapte    AllocFrameBuffFlag   VdecAbnormal
+
+----- Detail ACL EVENT STATE ----------------------------------------------------------------------------------------------
+  ID    SendFrame      SendEos   SubmitComplete    SubmitEos  SubmitNotFull  AclGetFrame  CallRelease    FullState    FullCount
+  ID   IsAclProcess   SubmitChnAbnormal   SubmitEosAbnormal       acl_get_last_time   acl_release_last_time
+
+----- Detail JPEGD ACL EVENT STATE ----------------------------------------------------------------------------------------
+  ID      SendFrame    FramesInQue    WakeUpTimes     QueryTimes       GetFrame    QueryNoInfo   FalseResults    SuccResults
+  ID  ChnInvalidCnt    ApplySemCnt  SemaphoreFail  SemaphorePass      QueIsFull
+
+----- Detail JPEGD Task Count -------------------------------------------------------------------------------
+  ID   SendStreamCnt    GetStreamCnt   QueryFrameCnt    ConfigRegCnt   RecvNorIntCnt   RecvErrIntCnt  OverTimeIntCnt      LostIntCnt     GetFrameCnt
+
+------Detail HOST MPI STATE------------------------------------------------------------------------------------
+  ID SendTimerSetup  SendTimerKill   SendTimerRun    SendTimeout
+
+----- Detail Vdec Cost Time ----------------------------------------------------------------------------------------
+  ID   AveIoctl(us)   MaxEvent(us)   MinEvent(us)   AveEvent(us)    MaxTask(us)    MinTask(us)    AveTask(us)
+
+----- Detail JPEGD Kernel Task Cost Time -------------------------------------------------------------------------------
+  ID ParseStream(us)    GetParse(us) ConfigTask(us) HardwareDec(us) PostProcess(us)
+
+----- Detail Vdec Chn Id Info----------------------------------------------------------------------------------
+  ID      UserChnId           VFID            Pid
+
+@@status 0
+@@endnode
+@@node /proc/umap/venc ready
+
+[VENC] Version: [HiDVPP]
+
+-----MODULE PARAM--------------------------------------------------------------
+     VencMaxChnNum
+               128
+
+  DEVICE_ID   VF_ID   VencBufferCache   FrameBufRecycle
+          0       0                 0                 0
+          0       1                 0                 0
+          0       2                 0                 0
+          0       3                 0                 0
+          0       4                 0                 0
+          0       5                 0                 0
+          0       6                 0                 0
+          0       7                 0                 0
+          0       8                 0                 0
+
+
+-----VENC CHN ATTR 1-----------------------------------------------------------
+      ID   Width  Height  Type  ByFrame    Sequence   LeftBytes     LeftFrm  CurPacks   GopMode  Prio
+
+-----VENC CHN ATTR 2-----------------------------------------------------------
+      ID   VeStr   SrcFr   TarFr     Timeref  PixFmt PicAddr      WakeUpFrmCnt
+
+-----VENC JPEGE ATTR -----------------------------------------------------------
+      ID   RcvMode    MpfCnt      Mpf0Width     Mpf0Height      Mpf1Width     Mpf1Height
+
+
+-----VENC CHN RECEIVE STAT-----------------------------------------------------
+      ID       Start     StartEx    RecvLeft     EncLeft    JpegEncodeMode
+
+-----VENC VPSS QUERY-----------------------------------------------------------
+      ID       Query     QueryOk     QueryFR       Invld        Full      VbFail   QueryFail     InfoErr        Stop
+
+-----VENC SEND1----------------------------------------------------------------
+      ID     VpssSnd     VInfErr     OthrSnd     OInfErr        Send        Stop        Full     CropErr    DrectSnd     SizeErr
+
+-----VENC SEND2----------------------------------------------------------------
+      ID     SendVgs     StartOk   StartFail       IntOk     IntFail      SrcAdd      SrcSub     DestAdd     DestSub
+
+-----VENC PIC QUEUE STATE------------------------------------------------------
+      ID    Free    Busy     Vgs  BFrame
+
+-----VENC DCF/MPF QUEUE STATE------------------------------------------------------
+      ID   ThumbFree   ThumbBusy    Mpf0Free    Mpf0Busy    Mpf1Free    Mpf1Busy
+
+-----VENC CHNL INFO------------------------------------------------------------
+      ID         Inq       InqOk       Start     StartOk      Config     VencInt  ChaResLost    OverLoad    RingSkip      RcSkip
+
+-----VENC CROP INFO------------------------------------------------------------
+      ID  CropEn  StartX  StartY   Width  Height
+
+
+-----ROI INFO------------------------------------------------------------------
+     ID      Type     Index    bRoiEn    bAbsQp    Qp     Width    Height    StartX    StartY 
+
+
+-----VENC STREAM STATE---------------------------------------------------------
+      ID     FreeCnt     BusyCnt     UserCnt     UserGet     UserRls    GetTimes    Interval   FrameRate
+
+
+-----VENC PTS STATE---------------------------------------------------------
+      ID RcvFirstFrmPts    RcvFrmPts 
+
+
+----VENC FAULT INFO----------------------------------------------------
+    VPU_ID           FaultName    FaultStatus         SumCnt    CntBeforeRecover NewestTimeStamp(ms)
+
+-----VENC EVENT TIME---------------------------------------------------------
+      ID   MaxEvent(us)   MinEvent(us)   AveEvent(us)
+
+----VENC TASK COST TIME-------------------------------------------------------
+      ID MaxTask(us) MinTask(us) AveTask(us)
+
+----VENC ABNORMAL TASKS(threshold = 50000 us, max 10000000 us, min 1 us)-------------------
+      ID     PID   VF_ID   Width  Height  Type   BufSize   TotalTime   IoctlTime    SendTime    Schedule   PreEncode    WriteReg    HardWare     IntProc ReEncodeCnt
+
+----VENC KEY POINT COST TIME(us)----------------------------------------------------
+      ID  DataType   IoctlTime    SendTime    Schedule   PreEncode    WriteReg    HardWare     IntProc   GetStream   RlsStream
+
+-----VENC HOST MPI STATE---------------------------------------------------
+      ID SendTimerSetup  SendTimerkill   SendTimerRun    SendTimeout
+
+
+-----Detail Venc Chn Id Info---------------------------------------------------
+      ID      UserChnId           VFID            Pid
+
+
+@@status 0
+@@endnode
+@@node /proc/umap/vpc ready
+
+ VPC PROC
+
+----- MODULE PARAM -----------------------------------------------------------------------------------------------------
+   VpcMaxChnNum    MaxPicWidth   MaxPicHeight    MinPicWidth   MinPicHeight
+            256           8192           8192             10              6
+
+----- CHN PIC ATTR & PARAMS -------------------------------------------------------------------------------------------
+  ID      input_fmt   input_w   input_h   input_stride     output_fmt  output_w  output_h  output_stride        task_id
+
+----- CHN FUNC ATTR & PARAMS ----------------------------------------------------------------------------------------
+  ID           Func_type   count     int_status    general_mem/byte        vpc_mem/byte
+
+----- CHN QUEUE STATUS -------------------------------------------------------------------------------------------
+  ID     free_queue  working_queue    event_queue
+
+----- Detail Vpc Cost Time --------------------------------------------------------------------------------------
+  ID   MaxEvent(us)   MinEvent(us)   AveEvent(us)    MaxTask(us)    MinTask(us)    AveTask(us) AveIntTime(us)  SendFrameRate(fps)      Ioctl(us)
+
+----- Abnormal Tasks (threshold = 50000 us, max 10000000 us, min 1 us)---------------------------------------
+  ID  in_w  in_h out_h out_w            func_type count  int_status  TotalTime(us)  AddTask  GetTask   HwBusy  recvInt   GetRes  DoneEvt  HwCycle
+
+----- Detail Vpc Task Cnt Info --------------------------------------------------------------------------------------
+  ID      UserChnId   add_task_cnt   get_task_cnt query_task_cnt config_reg_cnt   recv_nor_cnt   recv_err_cnt   lost_int_cnt      retry_cnt     put_evt_que_cnt get_result_cnt
+
+----- Detail Vpc Chn Id Info --------------------------------------------------------------------------------------
+  ID      UserChnId           VFID            Pid      ChnStatus
+
+----- Vpc RAS Fault Info --------------------------------------------------------------------------------------
+    VPC_ID           FaultName    FaultStatus         SumCnt    CntBeforeRecover NewestTimeStamp(ms)
+
+@@status 0
+@@endnode
+@@node /proc/umap/rc ready
+
+[RC] Version: [HiDVPP]
+
+
+------BASE PARAMS 1------------------------------------------------------------
+  ChnId    Gop  StatTm  ViFr       TrgFr ProType  RcMode  Br(kbps)  FluLev  IQp  PQp  BQp 
+
+------BASE PARAMS 2------------------------------------------------------------
+  ChnId   MinQp   MaxQp  MinIQp  MaxIQp   EnableIdr    bQpMapEn   QpMapMode 
+
+------BASE PARAMS 3------------------------------------------------------------
+  ChnId    LongTermStatTime   ShortTermStatTime  LongTermMaxBitrate  LongTermMinBitrate 
+
+-----RUN COMM PARAM 1----------------------------------------------------------
+  ChnId  RowQpDelta                       ThrdI(16)
+
+-----RUN COMM PARAM 2------------------------------------------------------------
+  ChnId  FirstFrmStartQP                  ThrdP(16)
+
+-----RUN COMM PARAM 3----------------------------------------------------------
+  ChnId  DirectionThrd                       ThrdB(16)
+
+-----RUN COMM PARAM 4----------------------------------------------------------
+  ChnId   bLost     LostThr  LostFrmStr    EncGap  RCPriority   SprFrmMod     SprIFrm     SprPFrm     SprBFrm    bClrStat
+
+-----RUN COMM PARAM 5----------------------------------------------------------
+  ChnId       bDetectSceneChange        bAdapInsertIFrame
+
+-----Foreground INFO 1----------------------------------------------------------
+  ChnId     bThrdEn  DirectionThrd                          ThrdP(16)
+
+-----Foreground INFO 2----------------------------------------------------------
+  ChnId  ThreshGain   ThreshOffset                          ThrdB(16)
+
+-----GOP MODE ATTR-------------------------------------------------------------
+  ChnId   GopMode IpQpDelta  SPInterval SPQpDelta   BFrmNum  BQpDelta  BgInterval ViQpDelta
+
+-----RUN CBR PARAM ------------------------------------------------------------
+  ChnId  MinIprop  MaxIprop   MaxQp   MinQp  MaxIQp  MinIQp  MaxReEncTimes
+
+-----RUN VBR COMM PARAM ------------------------------------------------------------
+  ChnId   ChgPs  MinIprop  MaxIprop   MaxQp   MinQp  MaxIQp  MinIQp  MaxReEncTimes
+
+-----RUN AVBR PARAM ------------------------------------------------------------
+  ChnId     MaxStillQP    MotionSensi     MinPercent   MinStillPSNR     MinQpDelta
+
+-----RUN QVBR PARAM ------------------------------------------------------------
+  ChnId   BitPercentLL   BitPercentUL   PsnrFluctuateLL   PsnrFluctuateUL
+
+-----RUN CVBR PARAM ------------------------------------------------------------
+  ChnId     MinQpDelta     MaxQpDelta        ExBitPercent     LongTermStatTimeUnit
+
+-----RUN INFO1-----------------------------------------------------------------
+  ChnId   InsBr(kbps)   InsFr    WatL   CfgBt(kb)  RealBt(kb)   IPRatio  TarPercent   StartQp   MinQp   MaxQp
+
+-----RC HierarchicalQp INFO-----------------------------------------------------
+  ChnId   bEnable FrameNum[0] FrameNum[1] FrameNum[2] FrameNum[3]  QpDelta[0]  QpDelta[1]  QpDelta[2]  QpDelta[3]
+
+-----RC PERFORMANCE  INFO------------------------------------------------------
+  ChnId       StaOfstaTim      TotaOfstaTim       StaOfEndTim      TotaOfEndTim         TotalTime
+
+@@status 0
+@@endnode
+@@node /proc/umap/h264e ready
+
+[H264E] Version: [HiDVPP]
+
+-----MODULE PARAM--------------------------------------------------------------
+  DEVICE_ID   VF_ID      OnePack   H264eVBSource      PowerSaveEn     MiniBufMode     bQpHstgrmEn  MaxUserDataLen
+          0       0            1               2                0               1               1            1024
+          0       1            1               2                0               1               1            1024
+          0       2            1               2                0               1               1            1024
+          0       3            1               2                0               1               1            1024
+          0       4            1               2                0               1               1            1024
+          0       5            1               2                0               1               1            1024
+          0       6            1               2                0               1               1            1024
+          0       7            1               2                0               1               1            1024
+          0       8            1               2                0               1               1            1024
+-----CHN ATTR------------------------------------------------------------------
+     ID  MaxWidth MaxHeight     Width    Height   profile   C2GEn   BufSize   ByFrame   GopMode   MaxStrCnt
+
+-----PICTURE INFO--------------------------------------------------------------
+     ID      EncStart    EncSucceed        Lost        Disc       Pskip      Recode   MaxRecode      RlsStr     UnrdStr       Cycle
+
+-----STREAM BUFFER-------------------------------------------------------------
+     ID     RdTail      RdHead      WrTail      WrHead      DataLen     BufFree     H264MemCnt     
+-----RefParam INFO--------------------------------------------------------------
+     ID      EnPred        Base     Enhance    RcnRefShareBuf
+
+-----ROIBG INFO------------------------------------------------------------------
+     ID   BgSrcFr   BgTarFr
+
+-----Syntax INFO1--------------------------------------------------------------
+     ID SlcspltEn   Slcmode   Slcsize   IntraRefresh    RefreshMode     RefreshNum   QpOfIDR
+
+-----Syntax INFO2--------------------------------------------------------------
+     ID   profile   EntrpyI   EntrpyP   EntrpyB  Itrans  Ptrans QMatrix   POC   DblkIdc   alpha    beta
+
+-----Foreground && Scene INFO-------------------------------------------------------------
+     ID  ForegroundSkipCoef  BackgroundSkipCoef SceneMode
+
+-----CuPrediction-------------------------------------------------------------------
+     ID  PredMode     Inter8Cost    Inter16Cost     Intra4Cost     Intra8Cost    Intra16Cost 
+
+-----SearchWindow-------------------------------------------------------------------
+     ID   SearchWindow            Hor            Ver
+
+-----SkipBias-------------------------------------------------------------------
+     ID     SkipBiasEn      Gain    Offset      ForegroundCost      BackgroundCost
+
+
+@@status 0
+@@endnode
+@@node /proc/umap/h265e ready
+
+[H265E] Version: [HiDVPP]
+
+-----MODULE PARAM--------------------------------------------------------------
+  DEVICE_ID    VF_ID      OnePack      H265eVBSource        PowerSaveEn        MiniBufMode       bQpHstgrmEn    MaxUserDataLen
+          0        0            1                  2                  0                  1                 1              1024
+          0        1            1                  2                  0                  1                 1              1024
+          0        2            1                  2                  0                  1                 1              1024
+          0        3            1                  2                  0                  1                 1              1024
+          0        4            1                  2                  0                  1                 1              1024
+          0        5            1                  2                  0                  1                 1              1024
+          0        6            1                  2                  0                  1                 1              1024
+          0        7            1                  2                  0                  1                 1              1024
+          0        8            1                  2                  0                  1                 1              1024
+-----CHN ATTR------------------------------------------------------------------
+     ID  MaxWidth MaxHeight     Width    Height   Profile   C2GEn   BufSize   ByFrame   GopMode   MaxStrCnt
+
+-----PICTURE INFO--------------------------------------------------------------
+     ID      EncStart    EncSucceed        Lost        Disc       Pskip      Recode   MaxRecode      RlsStr     UnrdStr       Cycle
+
+-----STREAM BUFFER-------------------------------------------------------------
+     ID      RdTail      RdHead      WrTail      WrHead     DataLen     BufFree     H265MemCnt
+-----RefParam INFO-------------------------------------------------------------
+     ID      EnPred        Base     Enhance         UsedFrame      MaxUsedFrame    RcnRefShareBuf
+
+-----ROIBG INFO------------------------------------------------------------------
+     ID   BgSrcFr   BgTarFr
+
+-----Syntax INFO1--------------------------------------------------------------
+     ID SlcspltEn   Slcmode   Slcsize   IntraRefresh    RefreshMode     RefreshNum   QpOfIDR
+
+-----Syntax INFO2--------------------------------------------------------------
+     ID    DblkEn      Tc    Beta   Saoluma Saochroma  EntrpyFlag
+
+-----Syntax INFO3--------------------------------------------------------------
+     ID  TimInfFlag   NumInTick    TimeScal     DiffOne
+
+-----Pu INFO-------------------------------------------------------------------
+     ID   ConsIntra IntraSmoothing   SearchWindow            Hor            Ver
+
+-----Trans INFO----------------------------------------------------------------
+     ID  CbQpOffset  CrQpOffset
+
+-----Foreground && Scene INFO--------------------------------------------------------------
+     ID  ForegroundSkipCoef  BackgroundSkipCoef SceneMode
+
+-----CuPrediction-------------------------------------------------------------------
+     ID  PredMode  Inter8Cost Inter16Cost Inter32Cost Inter64Cost  Intra4Cost  Intra8Cost Intra16Cost Intra32Cost
+
+-----SkipBias-------------------------------------------------------------------
+     ID     SkipBiasEn      Gain    Offset      ForegroundCost      BackgroundCost
+
+
+@@status 0
+@@endnode
+@@complete

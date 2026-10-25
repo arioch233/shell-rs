@@ -1,0 +1,67 @@
+name: sync-upstream
+
+on:
+  schedule:
+    # 北京时间每周一 09:00
+    - cron: "0 1 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'arioch233/shell-rs' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Fetch upstream
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote add upstream https://github.com/since2006/shell-rs.git
+          git remote set-url --push upstream DISABLED
+          git fetch --no-tags origin '+refs/heads/*:refs/remotes/origin/*'
+          git fetch --no-tags upstream main:refs/remotes/upstream/main
+      - name: Prepare merge
+        id: merge
+        # 合并可能修改仓库中的脚本，始终执行已审查 main 的副本
+        run: |
+          cp scripts/sync-upstream.sh "$RUNNER_TEMP/sync-upstream.sh"
+          bash "$RUNNER_TEMP/sync-upstream.sh"
+      - name: Push and open pull request
+        if: steps.merge.outputs.needs_pr == 'true'
+        env:
+          UPSTREAM_SHA: ${{ steps.merge.outputs.upstream_sha }}
+        run: |
+          git push origin HEAD:refs/heads/sync/upstream-update
+          pr=$(gh pr list --base main --head sync/upstream-update --state open --json number --jq '.[0].number // empty')
+          body="$RUNNER_TEMP/upstream-pr.md"
+          cat > "$body" <<EOF
+          将原作者更新合并到定制版本，保留双方提交历史。
+
+          上游提交：\`$UPSTREAM_SHA\`
+
+          - 查看 [上游最新提交](https://github.com/since2006/shell-rs/commit/$UPSTREAM_SHA) 及本 PR 文件差异
+          - 如检查等待批准，在 PR 页面批准工作流运行
+          - CI 通过后，人工检查监控、SSH 和 SFTP 行为，使用 Merge commit 合并
+
+          此工作流不会自动批准或合并 PR；冲突需人工处理。
+          EOF
+          if [ -n "$pr" ]; then
+            gh pr edit "$pr" --body-file "$body"
+          else
+            gh pr create --base main --head sync/upstream-update --title 'sync: 合并上游更新' --body-file "$body"
+          fi

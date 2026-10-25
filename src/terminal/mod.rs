@@ -7,6 +7,7 @@ mod directory_setup;
 mod engine;
 mod environment;
 mod exec;
+mod exec_request;
 mod font;
 mod highlight;
 mod input;
@@ -36,7 +37,11 @@ pub use directory_setup::{
 };
 pub use engine::{TerminalCell, TerminalEngine, TerminalEvent, TerminalSnapshot};
 pub(crate) use environment::strip_launcher_vars;
-pub use exec::{ExecTarget, exec_answer};
+pub use exec::{ExecTarget, detailed_exec_answer, exec_answer};
+pub use exec_request::{
+    DetailedExecRequest, DetailedExecResult, ExecFailure, ExecHandle, ExecOptions, ExecOutput,
+    shell_script, shell_script_with_input,
+};
 pub use font::{
     DEFAULT_FONT_SIZE, DEFAULT_LINE_HEIGHT, FONT_SIZE_RANGE, LINE_HEIGHT_RANGE, TerminalFont,
     TerminalFontPreview, is_font_installed, monospace_font_families,

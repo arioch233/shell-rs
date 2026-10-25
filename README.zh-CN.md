@@ -4,12 +4,14 @@
 
 <h1 align="center">ShellRS</h1>
 
+> **定制 Fork · 2026-10-25**：本仓库由 [arioch233](https://github.com/arioch233/shell-rs) 维护，基于 [since2006/shell-rs](https://github.com/since2006/shell-rs)，保留原作者版权及 GPLv3 许可证。主要修改为统一资源监控（Rockchip、Jetson、Ascend）、按设备展示硬件信息、授权采集及 SFTP 系统拖出下载。本 Fork 当前仅提供源码构建，原作者安装包不包含这些定制。开发与上游同步见 [Fork 维护指南](docs/fork-maintenance.zh.md)。
+
 <p align="center">
   用 Rust 编写、由 GPU 渲染界面的高性能原生跨平台 SSH 客户端：Xshell 式的主机管理、WinSCP 式 SFTP 和端口转发，都在一个窗口里。
 </p>
 
 <p align="center">
-  <a href="https://github.com/since2006/shell-rs/releases"><img src="https://img.shields.io/github/v/release/since2006/shell-rs?include_prereleases&label=release" alt="Release"></a>
+  <a href="https://github.com/since2006/shell-rs/releases"><img src="https://img.shields.io/github/v/release/since2006/shell-rs?include_prereleases&label=upstream%20release" alt="Release"></a>
   <a href="#许可证"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License: GPL-3.0"></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey" alt="Platform: macOS | Windows | Linux">
   <img src="https://img.shields.io/badge/rust-1.98-orange" alt="Rust 1.98">
@@ -122,6 +124,8 @@ ShellRS 把 Xshell 式的主机管理和多标签终端、WinSCP 式的双栏 SF
 
 ## 下载
 
+> 以下下载、签名与自动更新说明仅适用于原作者版本；本 Fork 请按下文从源码构建。
+
 到官网 [shellrs.com/download](https://shellrs.com/download) 下载，页面会按你的系统给出对应的安装包；也可以到 GitHub [Releases](https://github.com/since2006/shell-rs/releases) 下载。Beta 版在 Releases 里标为 Pre-release，想提前用上新功能，可以在「设置 › 关于」里把更新渠道切到 Beta。
 
 | 系统 | 安装包 | 说明 |
@@ -163,7 +167,7 @@ shellrs sync <ID> ./dist /opt/app --delete         # 同步目录，没变的文
 需要先装 [rustup](https://rustup.rs)。仓库里的 `rust-toolchain.toml` 固定了 Rust 1.98.1，第一次构建时会自动安装。
 
 ```sh
-git clone https://github.com/since2006/shell-rs.git
+git clone https://github.com/arioch233/shell-rs.git
 cd shell-rs
 cargo run
 ```
@@ -189,7 +193,7 @@ cargo run
 
 ## 参与贡献
 
-欢迎提交 [Issue](https://github.com/since2006/shell-rs/issues) 和 Pull Request。架构说明和代码约定见 [CLAUDE.md](CLAUDE.md)。提交前请确认下面三条都通过：
+欢迎提交 [Issue](https://github.com/arioch233/shell-rs/issues) 和 Pull Request。架构说明和代码约定见 [CLAUDE.md](CLAUDE.md)。提交前请确认下面三条都通过：
 
 ```sh
 cargo fmt --check

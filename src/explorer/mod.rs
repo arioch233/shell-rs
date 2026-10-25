@@ -1,6 +1,7 @@
 //! The SFTP tab: local and remote file browsing, transfers and their queue.
 
 mod explorer_panel;
+mod external_download;
 mod file_dialogs;
 mod file_edit;
 mod file_icons;

@@ -1,0 +1,12 @@
+@@nvidia
+0, GPU-jetson-fixture, Orin (nvgpu), [N/A], 540.4.0, [N/A], [N/A], [N/A], [N/A], [N/A], [N/A], [N/A], [N/A], [N/A]
+@@status 0
+@@nvidia-apps
+GPU-jetson-fixture, [N/A], [N/A], [N/A]
+@@status 0
+@@tegra
+10-25-2026 10:55:34 RAM 2391/15655MB (lfb 7x4MB) SWAP 0/7827MB (cached 0MB) CPU [0%@729,0%@729,0%@729,0%@729,0%@729,0%@729,0%@729,0%@729] GR3D_FREQ 0% cv0@48.718C cpu@53.031C soc2@47.375C soc0@49.375C cv1@48.156C gpu@50.656C tj@53.031C soc1@47.843C cv2@45.562C
+@@status 137
+@@tegra-frequency
+306000000
+@@end

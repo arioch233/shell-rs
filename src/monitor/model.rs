@@ -129,7 +129,7 @@ impl Snapshot {
 #[derive(Clone, Debug, PartialEq)]
 pub struct CpuLoad {
     pub total: f32,
-    pub cores: Vec<f32>,
+    pub cores: Vec<Option<f32>>,
 }
 
 /// Bytes per second through a network interface since the reading before;
@@ -177,7 +177,7 @@ fn snapshot(reading: &Reading, before: Option<(&Reading, Duration)>) -> Snapshot
                 .cores
                 .iter()
                 .zip(&before.cores)
-                .map(|(now, then)| busy_percent(*now, *then).unwrap_or(0.))
+                .map(|(now, then)| busy_percent(*now, *then))
                 .collect()
         } else {
             Vec::new()
@@ -291,7 +291,7 @@ mod tests {
         );
         let cpu = second.cpu.expect("a load against the first reading");
         assert_eq!(cpu.total, 25.);
-        assert_eq!(cpu.cores, vec![25.]);
+        assert_eq!(cpu.cores, vec![Some(25.)]);
         assert_eq!(second.interfaces[0].received, Some(2048.));
         assert_eq!(second.interfaces[0].transmitted, Some(1024.));
         assert!(!second.interfaces[0].idle);

@@ -25,6 +25,8 @@ pub enum TerminalTransportCommand {
     /// Run a command beside the shell. Only a transport with a connection of
     /// its own runs it; the others drop the request.
     Exec(ExecRequest),
+    /// 带类型化结果、输出限制和取消能力的旁路命令
+    ExecDetailed(super::DetailedExecRequest),
     /// Open an SFTP channel beside the shell, for the right sidebar's
     /// 文件. Dropped like `Exec` by a transport without a connection.
     OpenSftp(SftpChannelRequest),
@@ -125,6 +127,7 @@ impl std::fmt::Debug for TerminalTransportCommand {
                 .finish(),
             Self::OpenSftp(_) => formatter.write_str("OpenSftp"),
             Self::SendBreak => formatter.write_str("SendBreak"),
+            Self::ExecDetailed(_) => formatter.write_str("ExecDetailed"),
             Self::Shutdown => formatter.write_str("Shutdown"),
         }
     }

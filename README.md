@@ -4,12 +4,14 @@
 
 <h1 align="center">ShellRS</h1>
 
+> **定制 Fork · 2026-10-25**：本仓库由 [arioch233](https://github.com/arioch233/shell-rs) 维护，基于 [since2006/shell-rs](https://github.com/since2006/shell-rs)，保留原作者版权及 GPLv3 许可证。主要修改为统一资源监控（Rockchip、Jetson、Ascend）、按设备展示硬件信息、授权采集及 SFTP 系统拖出下载。本 Fork 当前仅提供源码构建，原作者安装包不包含这些定制。开发与上游同步见 [Fork 维护指南](docs/fork-maintenance.zh.md)。
+
 <p align="center">
   A high-performance, native, cross-platform SSH client written in Rust, with a GPU-rendered interface: Xshell-style host management, WinSCP-style SFTP and port forwarding, all in one window.
 </p>
 
 <p align="center">
-  <a href="https://github.com/since2006/shell-rs/releases"><img src="https://img.shields.io/github/v/release/since2006/shell-rs?include_prereleases&label=release" alt="Release"></a>
+  <a href="https://github.com/since2006/shell-rs/releases"><img src="https://img.shields.io/github/v/release/since2006/shell-rs?include_prereleases&label=upstream%20release" alt="Release"></a>
   <a href="#license"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License: GPL-3.0"></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey" alt="Platform: macOS | Windows | Linux">
   <img src="https://img.shields.io/badge/rust-1.98-orange" alt="Rust 1.98">
@@ -122,6 +124,8 @@ Hosts, groups, credentials and forwarding rules live in a local SQLite database.
 
 ## Download
 
+> 以下下载、签名与自动更新说明仅适用于原作者版本；本 Fork 请按下文从源码构建。
+
 Download from [shellrs.com/download](https://shellrs.com/download), which offers the package for your system, or from GitHub [Releases](https://github.com/since2006/shell-rs/releases). Betas are marked Pre-release there; to get new features early, switch the update channel to Beta in Settings › About.
 
 | System | Package | Notes |
@@ -163,7 +167,7 @@ The command hands each request to the running ShellRS, which logs in with the sa
 Install [rustup](https://rustup.rs). The repository's `rust-toolchain.toml` pins Rust 1.98.1, which rustup installs on the first build.
 
 ```sh
-git clone https://github.com/since2006/shell-rs.git
+git clone https://github.com/arioch233/shell-rs.git
 cd shell-rs
 cargo run
 ```
@@ -191,7 +195,7 @@ Not implemented yet:
 
 ## Contributing
 
-Issues and pull requests are welcome on [GitHub](https://github.com/since2006/shell-rs/issues). Architecture notes and code conventions are in [CLAUDE.md](CLAUDE.md) (in Chinese). Before sending a change, make sure these pass:
+Issues and pull requests are welcome on [GitHub](https://github.com/arioch233/shell-rs/issues). Architecture notes and code conventions are in [CLAUDE.md](CLAUDE.md) (in Chinese). Before sending a change, make sure these pass:
 
 ```sh
 cargo fmt --check

@@ -16,7 +16,7 @@ use crate::{
         SnippetCategoryId, SnippetId, TerminalDrop, TerminalGroupId, TerminalNode,
     },
     kubernetes::KubernetesCommand,
-    monitor::MonitorDetail,
+    monitor::{CollectorDomain, MonitorDetail, MonitorPage},
     processes::ProcessSort,
     services::ServiceCommand,
     terminal::{LocalTerminalId, RemoteTerminalId},
@@ -99,6 +99,8 @@ gpui_kit::actions!(
         /// Read the GPUs and NPUs of the SSH terminal's host again, and go
         /// on reading them after a failure stopped it.
         RefreshGpu,
+        /// 为当前 SSH 主机配置固定硬件节点的免密读取
+        ConfigureMonitorAccess,
         /// 全部展开 in GPU/NPU, or 全部收起 when every device is unfolded.
         ToggleAllGpuDevices,
         /// Read the tmux sessions of the SSH terminal's host again.
@@ -303,6 +305,18 @@ id_actions! {
     InstallDirectoryFollow(RemoteTerminalId);
     /// Unfold a part of the system monitor, or fold it away again.
     ToggleMonitorDetail(MonitorDetail);
+    /// 切换统一监控子页
+    SelectMonitorPage(MonitorPage);
+    /// 刷新指定采集域，空值表示全部
+    RefreshMonitor(Option<CollectorDomain>);
+    /// 查看指标来源
+    ToggleMonitorMetric(String);
+    /// 选择系统或加速器进程
+    SelectMonitorProcesses(bool);
+    /// 设置当前主机的 sudo 硬件只读采集
+    SetMonitorSudo(bool);
+    /// 展开或收起监控采集设置
+    SetMonitorSettings(bool);
     /// Unfold a device of GPU/NPU to its details, or fold them away again,
     /// by its key.
     ToggleGpuDevice(String);
@@ -731,6 +745,10 @@ pub enum ExplorerCommand {
     DownloadPaths {
         paths: Vec<String>,
         target: String,
+    },
+    /// 将冻结的远端文件交给系统拖拽，落点由系统文件管理器提供
+    DragDownload {
+        paths: Vec<String>,
     },
     /// Put a confirmed upload or download on the transfer queue.
     Enqueue(crate::explorer::TransferJob),

@@ -41,6 +41,12 @@ pub struct FakeTerminalFactory {
     pub exec_outputs: Arc<Mutex<std::collections::VecDeque<String>>>,
     /// The commands run beside the shell, in order.
     pub exec_commands: Arc<Mutex<Vec<String>>>,
+    pub monitor_outputs:
+        Arc<Mutex<std::collections::HashMap<String, std::collections::VecDeque<String>>>>,
+    pub monitor_commands: Arc<Mutex<Vec<(String, String)>>>,
+    pub monitor_delays: Arc<Mutex<std::collections::HashMap<String, Duration>>>,
+    pub monitor_active: Arc<AtomicUsize>,
+    pub monitor_peak: Arc<AtomicUsize>,
     /// The SFTP channels opened beside the shell, by the run (1 for the
     /// first connection, 2 after one reconnect…) that opened each.
     pub sftp_opens: Arc<Mutex<Vec<usize>>>,
@@ -104,6 +110,21 @@ impl FakeTerminalFactory {
         }
     }
 
+    pub fn monitor_answers(&self, domain: &str, outputs: &[&str]) {
+        self.monitor_outputs.lock().unwrap().insert(
+            domain.into(),
+            outputs.iter().map(|s| s.to_string()).collect(),
+        );
+    }
+    pub fn monitor_count(&self, domain: &str) -> usize {
+        self.monitor_commands
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(label, _)| label == domain)
+            .count()
+    }
+
     pub fn fail_first() -> Self {
         Self {
             behavior: FakeBehavior::FailFirst,
@@ -159,6 +180,11 @@ impl TerminalTransportFactory for FakeTerminalFactory {
             resizes: self.resizes.clone(),
             exec_outputs: self.exec_outputs.clone(),
             exec_commands: self.exec_commands.clone(),
+            monitor_outputs: self.monitor_outputs.clone(),
+            monitor_commands: self.monitor_commands.clone(),
+            monitor_delays: self.monitor_delays.clone(),
+            monitor_active: self.monitor_active.clone(),
+            monitor_peak: self.monitor_peak.clone(),
             sftp_opens: self.sftp_opens.clone(),
             breaks: self.breaks.clone(),
             data: self.data.clone(),
@@ -173,6 +199,12 @@ pub struct FakeTerminalTransport {
     pub resizes: Arc<Mutex<Vec<TerminalSize>>>,
     pub exec_outputs: Arc<Mutex<std::collections::VecDeque<String>>>,
     pub exec_commands: Arc<Mutex<Vec<String>>>,
+    pub monitor_outputs:
+        Arc<Mutex<std::collections::HashMap<String, std::collections::VecDeque<String>>>>,
+    pub monitor_commands: Arc<Mutex<Vec<(String, String)>>>,
+    pub monitor_delays: Arc<Mutex<std::collections::HashMap<String, Duration>>>,
+    pub monitor_active: Arc<AtomicUsize>,
+    pub monitor_peak: Arc<AtomicUsize>,
     pub sftp_opens: Arc<Mutex<Vec<usize>>>,
     pub breaks: Arc<AtomicUsize>,
     pub data: Arc<Mutex<Vec<Vec<u8>>>>,
@@ -251,6 +283,69 @@ impl TerminalTransport for FakeTerminalTransport {
                         .lock()
                         .unwrap_or_else(|error| error.into_inner())
                         .push(size);
+                }
+                TerminalTransportCommand::ExecDetailed(request) => {
+                    use shellrs::terminal::{ExecFailure, ExecOutput};
+                    let domain = request.options.label.unwrap_or("unknown").to_owned();
+                    self.exec_commands
+                        .lock()
+                        .unwrap()
+                        .push(request.command.clone());
+                    self.monitor_commands
+                        .lock()
+                        .unwrap()
+                        .push((domain.clone(), request.command.clone()));
+                    let output = {
+                        let mut domains = self.monitor_outputs.lock().unwrap();
+                        domains
+                            .get_mut(&domain)
+                            .and_then(|outputs| {
+                                if outputs.len() > 1 {
+                                    outputs.pop_front()
+                                } else {
+                                    outputs.front().cloned()
+                                }
+                            })
+                            .unwrap_or_else(|| match domain.as_str() {
+                                "probe" => "@@complete\n".into(),
+                                "accelerator" => "@@end\n".into(),
+                                _ => "@@unsupported\nLinux\n".into(),
+                            })
+                    };
+                    let delay = self
+                        .monitor_delays
+                        .lock()
+                        .unwrap()
+                        .get(&domain)
+                        .copied()
+                        .unwrap_or_default();
+                    let active = self.monitor_active.clone();
+                    let peak = self.monitor_peak.clone();
+                    std::thread::spawn(move || {
+                        let current = active.fetch_add(1, Ordering::SeqCst) + 1;
+                        peak.fetch_max(current, Ordering::SeqCst);
+                        let start = std::time::Instant::now();
+                        while start.elapsed() < delay
+                            && start.elapsed() < request.options.timeout
+                            && !request.is_cancelled()
+                        {
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        let result = if request.is_cancelled() {
+                            Err(ExecFailure::Cancelled)
+                        } else if start.elapsed() >= request.options.timeout {
+                            Err(ExecFailure::Timeout)
+                        } else if output.len() > request.options.max_output_bytes {
+                            Err(ExecFailure::OutputLimit)
+                        } else {
+                            let mut result = ExecOutput::default();
+                            result.stdout = output;
+                            result.exit_code = Some(0);
+                            Ok(result)
+                        };
+                        active.fetch_sub(1, Ordering::SeqCst);
+                        let _ = request.reply.send(result);
+                    });
                 }
                 TerminalTransportCommand::Exec(request) => {
                     self.exec_commands

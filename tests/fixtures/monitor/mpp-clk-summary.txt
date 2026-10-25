@@ -1,0 +1,10 @@
+                                 enable  prepare  protect                                duty
+   clock                          count    count    count        rate   accuracy phase  cycle
+---------------------------------------------------------------------------------------------
+   clk_rkvenc0_core                    1        1        0   800000000          0     0  50000
+   aclk_rkvenc0                        1        1        0   500000000          0     0  50000
+   hclk_rkvenc0                        1        1        0   100000000          0     0  50000
+   clk_rkvenc1_core                    0        0        0   600000000          0     0  50000
+   clk_rkvdec0_core                    1        1        0   700000000          0     0  50000
+   clk_rkvdec1_core                    0        0        0   700000000          0     0  50000
+   unrelated                          0        0        0  1000000000          0     0  50000

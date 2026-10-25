@@ -7,6 +7,19 @@ use gpui_kit::*;
 
 use super::{ExecResult, RemoteTerminalId, TerminalView};
 
+/// 轮询有界执行结果，保持取消句柄存活到请求完成
+pub async fn detailed_exec_answer(
+    handle: super::ExecHandle,
+    cx: &mut AsyncApp,
+) -> super::DetailedExecResult {
+    loop {
+        if let Some(result) = handle.try_recv() {
+            return result;
+        }
+        cx.background_executor().timer(POLL).await;
+    }
+}
+
 /// How often an answer on its way is looked for. It comes from the
 /// terminal's transport thread, which must not wake the UI itself.
 const POLL: Duration = Duration::from_millis(50);

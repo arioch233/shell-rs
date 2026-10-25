@@ -100,7 +100,7 @@ pub fn parse(output: &str) -> Parsed {
         }),
         uptime: first("uptime")
             .and_then(|line| line.split_whitespace().next()?.parse::<f64>().ok())
-            .map(Duration::from_secs_f64),
+            .and_then(|seconds| Duration::try_from_secs_f64(seconds).ok()),
         cpu,
         cores,
         memory: parse_memory(section("memory")),

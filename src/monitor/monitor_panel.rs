@@ -1,240 +1,494 @@
 use std::cell::Cell;
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::rc::Rc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use gpui_kit::component::{
     ActiveTheme as _, Icon, IconName, Sizable as _,
     button::{Button, ButtonVariants as _},
+    group_box::GroupBoxVariants as _,
     h_flex,
     progress::Progress,
     scroll::ScrollableElement as _,
-    spinner::Spinner,
+    switch::Switch,
     tooltip::Tooltip,
     v_flex,
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use super::MonitorDetail;
-use super::linux::{self, Parsed, Parts};
+use super::controller::MonitorController;
 use super::model::{
-    DiskUsage, InterfaceRate, Memory, Snapshot, SystemInfo, Tracker, bars_per_row, format_rate,
+    DiskUsage, InterfaceRate, Memory, Snapshot, SystemInfo, bars_per_row, format_rate,
 };
-use crate::app::{CatalogIcon, ToggleMonitorDetail};
+use super::snapshot::MetricStatus;
+use super::{CollectorDomain, MonitorDetail, MonitorPage};
+use crate::app::{
+    CatalogIcon, RefreshMonitor, SelectMonitorPage, SelectMonitorProcesses, SetMonitorSettings,
+    SetMonitorSudo, ToggleMonitorDetail,
+};
+use crate::gpu::GpuCards;
 use crate::i18n::{t, tn};
+use crate::processes::{Process, ProcessDetails, ProcessPanel, ProcessSort};
 use crate::shared::{
-    amount, card, format_bytes, format_duration, format_percent, gauge, load_color, meter, numeric,
+    Segment, SegmentedControl, amount, card, format_bytes, format_duration, format_percent, gauge,
+    load_color, meter, numeric,
 };
-use crate::terminal::{ExecResult, ExecTarget, RemoteTerminalId, exec_answer};
+use crate::terminal::{ExecTarget, RemoteTerminalId};
 
-/// Time between readings of the load. The second comes sooner: the CPU's
-/// load and the network's rates need two, and the panel should not sit on
-/// dashes.
-const INTERVAL: Duration = Duration::from_secs(2);
-const SECOND_READING: Duration = Duration::from_secs(1);
-/// Disks are read this seldom: they fill slowly, and `df` is the slowest
-/// part of a reading.
-const DISK_INTERVAL: Duration = Duration::from_secs(30);
-/// 系统监控: the CPU, memory, network and disks of the host of the SSH
-/// terminal in front, read every two seconds while the panel shows.
-///
-/// Each reading runs `linux::command` beside the shell, on the terminal's
-/// own connection: no second login, nothing asked again. What does not
-/// change while connected is asked once per connection, the disks every
-/// half minute, so most readings start no process on the host but the `sh`
-/// running them. Nothing runs on the host while the panel is hidden. What
-/// each terminal's host showed last is kept, so coming back to a terminal
-/// shows its numbers at once.
+/// 统一监控的展示状态，采样及缓存由控制器持有
 pub struct MonitorPanel {
-    target: Option<ExecTarget>,
-    active: bool,
-    hosts: HashMap<RemoteTerminalId, HostState>,
-    /// Every core's load, not only the first row of it.
+    controller: Entity<MonitorController>,
+    preference_key: Option<String>,
+    preference_generation: Option<(RemoteTerminalId, u64)>,
+    preferences_by_host: std::collections::HashMap<String, super::MonitorPreferences>,
+    processes: Entity<ProcessPanel>,
+    page: MonitorPage,
+    gpu_processes: bool,
+    allow_sudo: bool,
+    settings_open: bool,
+    cards: GpuCards,
     cores_unfolded: bool,
-    /// How wide the row of per-core bars was last frame, which decides how
-    /// many make the first row.
     cores_width: Rc<Cell<Option<Pixels>>>,
-    /// Every interface, not only the main one.
     interfaces_unfolded: bool,
-    /// The workspace's focus handle: the fold buttons dispatch on it, so
-    /// they work whatever is focused.
+    details: HashSet<String>,
     dispatch: FocusHandle,
-    sampling: Option<Task<()>>,
-}
-
-#[derive(Default)]
-struct HostState {
-    tracker: Tracker,
-    snapshot: Option<Snapshot>,
-    /// With the terminal's connection it was read on: a reconnect may land
-    /// on another machine.
-    system: Option<(u64, SystemInfo)>,
-    /// With when they were read.
-    disks: Option<(Instant, Vec<DiskUsage>)>,
-    problem: Option<Problem>,
-}
-
-impl HostState {
-    /// What the next reading on `connection` asks for besides the load.
-    fn parts_due(&self, connection: u64, now: Instant) -> Parts {
-        let system = self
-            .system
-            .as_ref()
-            .is_none_or(|(read_on, _)| *read_on != connection);
-        let disks = system
-            || self
-                .disks
-                .as_ref()
-                .is_none_or(|(at, _)| now.saturating_duration_since(*at) >= DISK_INTERVAL);
-        Parts { system, disks }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-enum Problem {
-    /// The terminal is not connected, so there is no connection to read on.
-    NotConnected,
-    /// Not Linux; `uname -s` when the host said it.
-    Unsupported(Option<String>),
-    /// The command did not run, or did not finish.
-    Failed(String),
-}
-
-/// What one try at a reading came back with.
-enum Outcome {
-    Output(ExecResult),
-    NotConnected,
+    focus_handle: FocusHandle,
+    _subscription: Subscription,
 }
 
 impl MonitorPanel {
-    pub fn new(dispatch: FocusHandle) -> Self {
+    pub fn new(dispatch: FocusHandle, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let controller = cx.new(MonitorController::new);
+        let processes = cx.new(|cx| ProcessPanel::new(dispatch.clone(), window, cx));
+        let focus_handle = cx.focus_handle();
+        let subscription = cx.observe(&controller, |this, _, cx| {
+            this.sync_processes(cx);
+            cx.notify();
+        });
         Self {
-            target: None,
-            active: false,
-            hosts: HashMap::new(),
+            controller,
+            preference_key: None,
+            preference_generation: None,
+            preferences_by_host: std::collections::HashMap::new(),
+            processes,
+            page: MonitorPage::Overview,
+            gpu_processes: false,
+            allow_sudo: false,
+            settings_open: false,
+            cards: GpuCards::new(dispatch.clone(), focus_handle.clone()),
             cores_unfolded: false,
             cores_width: Rc::new(Cell::new(None)),
             interfaces_unfolded: false,
+            details: HashSet::new(),
             dispatch,
-            sampling: None,
+            focus_handle,
+            _subscription: subscription,
         }
     }
-
-    /// Unfold a folded part, or fold it away again. Stays so for every
-    /// terminal's host.
-    pub fn toggle(&mut self, detail: MonitorDetail, cx: &mut Context<Self>) {
-        let unfolded = match detail {
-            MonitorDetail::Cores => &mut self.cores_unfolded,
-            MonitorDetail::Interfaces => &mut self.interfaces_unfolded,
-        };
-        *unfolded = !*unfolded;
-        cx.notify();
-    }
-
-    /// Read `target`'s host while `active`, the panel showing it.
-    pub fn set_target(&mut self, target: Option<ExecTarget>, active: bool, cx: &mut Context<Self>) {
-        if self.target == target && self.active == active {
-            return;
+    pub fn preferences(&self) -> super::MonitorPreferences {
+        let (gpu_all, gpu_toggled) = self.cards.preferences();
+        super::MonitorPreferences {
+            allow_sudo: self.allow_sudo,
+            page: self.page,
+            gpu_processes: self.gpu_processes,
+            cores: self.cores_unfolded,
+            interfaces: self.interfaces_unfolded,
+            details: self.details.clone(),
+            gpu_all,
+            gpu_toggled,
         }
-        self.target = target;
-        self.active = active;
-        self.restart(cx);
-        cx.notify();
     }
-
-    /// Start reading the target's host over, or stop when there is nothing
-    /// to show. Dropping the task stops it; a reading still on its way is
-    /// answered to no one.
-    fn restart(&mut self, cx: &mut Context<Self>) {
-        self.sampling = None;
-        let Some(target) = self.target.clone().filter(|_| self.active) else {
-            return;
-        };
-        self.sampling = Some(cx.spawn(async move |this, cx| {
-            let mut first = true;
-            loop {
-                let request = this.update(cx, |this, cx| {
-                    let view = target.view.upgrade()?;
-                    let view = view.read(cx);
-                    let connection = view.generation(cx);
-                    let now = cx.background_executor().now();
-                    let parts = this.hosts.get(&target.terminal).map_or(
-                        Parts {
-                            system: true,
-                            disks: true,
-                        },
-                        |host| host.parts_due(connection, now),
-                    );
-                    let reply = view.exec(linux::command(parts), cx)?;
-                    Some((reply, connection))
-                });
-                let Ok(request) = request else { break };
-                let (outcome, connection) = match request {
-                    None => (Outcome::NotConnected, 0),
-                    Some((reply, connection)) => (
-                        exec_answer(reply, cx)
-                            .await
-                            .map_or(Outcome::NotConnected, Outcome::Output),
-                        connection,
-                    ),
-                };
-                if this
-                    .update(cx, |this, cx| {
-                        this.record(target.terminal, connection, outcome, cx)
-                    })
-                    .is_err()
-                {
-                    break;
-                }
-                let pause = if first { SECOND_READING } else { INTERVAL };
-                first = false;
-                cx.background_executor().timer(pause).await;
-            }
-        }));
+    pub fn persistent_preferences(&self) -> super::MonitorPreferences {
+        let mut preferences = self.preferences();
+        preferences
+            .gpu_toggled
+            .retain(|key| !key.starts_with("GPU ") && !key.is_empty());
+        preferences.details.retain(|key| {
+            key.starts_with("hardware/")
+                || key.starts_with("rockchip/")
+                || key.starts_with("/sys/class/devfreq/")
+                || key.starts_with("/proc/pressure/")
+        });
+        preferences
     }
-
-    fn record(
+    pub fn restore_preferences(
         &mut self,
-        terminal: RemoteTerminalId,
-        connection: u64,
-        outcome: Outcome,
+        key: String,
+        preferences: super::MonitorPreferences,
         cx: &mut Context<Self>,
     ) {
-        let now = cx.background_executor().now();
-        let host = self.hosts.entry(terminal).or_default();
-        host.problem = match outcome {
-            Outcome::NotConnected => Some(Problem::NotConnected),
-            Outcome::Output(Err(error)) => Some(Problem::Failed(error)),
-            Outcome::Output(Ok(output)) => match linux::parse(&output) {
-                Parsed::Reading(mut reading) => {
-                    if let Some(system) = reading.system.take() {
-                        host.system = Some((connection, system));
-                    }
-                    if let Some(disks) = reading.disks.take() {
-                        host.disks = Some((now, disks));
-                    }
-                    host.snapshot = Some(host.tracker.update(*reading, now));
-                    None
-                }
-                Parsed::Unsupported(system) => Some(Problem::Unsupported(system)),
-            },
-        };
+        if self.preference_key.as_ref() == Some(&key) {
+            return;
+        }
+        if let Some(previous) = self.preference_key.take() {
+            self.preferences_by_host
+                .insert(previous, self.preferences());
+        }
+        let preferences = self
+            .preferences_by_host
+            .get(&key)
+            .cloned()
+            .unwrap_or(preferences);
+        self.preference_key = Some(key);
+        self.settings_open = false;
+        self.allow_sudo = preferences.allow_sudo;
+        self.gpu_processes = preferences.gpu_processes;
+        self.cores_unfolded = preferences.cores;
+        self.interfaces_unfolded = preferences.interfaces;
+        self.details = preferences.details;
+        self.cards
+            .restore(preferences.gpu_all, preferences.gpu_toggled);
+        self.page = preferences.page;
         cx.notify();
+    }
+    fn sync_processes(&mut self, cx: &mut Context<Self>) {
+        let controller = self.controller.read(cx);
+        let snapshot = controller.snapshot();
+        let generation = controller
+            .target()
+            .and_then(|target| snapshot.map(|host| (target.terminal, host.generation)));
+        if generation.is_some()
+            && self.preference_generation.is_some()
+            && generation != self.preference_generation
+        {
+            let stable = self.persistent_preferences();
+            self.cards.restore(stable.gpu_all, stable.gpu_toggled);
+            self.details = stable.details;
+        }
+        if generation.is_some() {
+            self.preference_generation = generation;
+        }
+        let reading = snapshot.and_then(|host| host.processes.value.clone());
+        let problem = snapshot.and_then(|host| {
+            if host.processes.stale {
+                Some(t!("monitor.state.stale").to_string())
+            } else if !matches!(
+                host.processes.status,
+                MetricStatus::Ready | MetricStatus::Loading
+            ) {
+                Some(status_text(&host.processes.status).to_string())
+            } else {
+                None
+            }
+        });
+        let target = controller.target();
+        self.processes.update(cx, |panel, cx| {
+            panel.set_observation(target, reading, problem, cx)
+        });
+    }
+    pub fn set_target(&mut self, target: Option<ExecTarget>, active: bool, cx: &mut Context<Self>) {
+        self.controller.update(cx, |controller, cx| {
+            controller.set_processes_active(
+                self.page == MonitorPage::Processes && !self.gpu_processes,
+                cx,
+            );
+            controller.set_target(target, active, self.allow_sudo, cx);
+        });
+        self.sync_processes(cx);
+        cx.notify();
+    }
+    pub fn retain(&mut self, terminals: &[RemoteTerminalId], cx: &mut Context<Self>) {
+        self.controller
+            .update(cx, |controller, _| controller.retain(terminals));
+    }
+    pub fn page(&self) -> MonitorPage {
+        self.page
+    }
+    pub fn select_page(&mut self, page: MonitorPage, cx: &mut Context<Self>) {
+        self.page = page;
+        self.controller.update(cx, |controller, cx| {
+            controller
+                .set_processes_active(page == MonitorPage::Processes && !self.gpu_processes, cx)
+        });
+        cx.notify();
+    }
+    pub fn set_settings_open(&mut self, open: bool, cx: &mut Context<Self>) {
+        self.settings_open = open;
+        cx.notify();
+    }
+    pub fn set_allow_sudo(&mut self, allow_sudo: bool, cx: &mut Context<Self>) {
+        self.allow_sudo = allow_sudo;
+        self.controller.update(cx, |controller, cx| {
+            controller.set_allow_sudo(allow_sudo, cx)
+        });
+        cx.notify();
+    }
+    pub fn select_processes(&mut self, gpu: bool, cx: &mut Context<Self>) {
+        self.gpu_processes = gpu;
+        self.controller.update(cx, |controller, cx| {
+            controller.set_processes_active(self.page == MonitorPage::Processes && !gpu, cx)
+        });
+        cx.notify();
+    }
+    pub fn refresh_target(
+        &mut self,
+        terminal: RemoteTerminalId,
+        generation: u64,
+        domain: CollectorDomain,
+        cx: &mut Context<Self>,
+    ) {
+        self.controller.update(cx, |controller, cx| {
+            controller.refresh_target(terminal, generation, domain, cx)
+        });
+    }
+    pub fn refresh(&mut self, domain: Option<CollectorDomain>, cx: &mut Context<Self>) {
+        self.controller
+            .update(cx, |controller, cx| controller.refresh(domain, cx));
+    }
+    pub fn toggle(&mut self, detail: MonitorDetail, cx: &mut Context<Self>) {
+        match detail {
+            MonitorDetail::Cores => self.cores_unfolded = !self.cores_unfolded,
+            MonitorDetail::Interfaces => self.interfaces_unfolded = !self.interfaces_unfolded,
+        }
+        cx.notify();
+    }
+    pub fn toggle_metric(&mut self, id: &str, cx: &mut Context<Self>) {
+        if !self.details.remove(id) {
+            self.details.insert(id.into());
+        }
+        cx.notify();
+    }
+    pub fn toggle_gpu(&mut self, id: &str, cx: &mut Context<Self>) {
+        self.cards.toggle(id);
+        cx.notify();
+    }
+    pub fn toggle_all_gpu(&mut self, cx: &mut Context<Self>) {
+        if let Some(reading) = self
+            .controller
+            .read(cx)
+            .snapshot()
+            .and_then(|host| host.accelerators.value.as_ref())
+        {
+            self.cards.toggle_all(reading);
+        }
+        cx.notify();
+    }
+    pub fn process_label(&self, pid: u32, cx: &App) -> Option<(String, Option<String>)> {
+        let controller = self.controller.read(cx);
+        let target = controller.target()?;
+        let view = target.view.upgrade()?;
+        let snapshot = controller.snapshot()?;
+        if snapshot.generation != view.read(cx).generation(cx)
+            || !matches!(
+                view.read(cx).lifecycle(cx),
+                crate::terminal::TerminalLifecycle::Running
+            )
+        {
+            return None;
+        }
+        if self.gpu_processes {
+            let host = self.controller.read(cx).snapshot()?;
+            if host.accelerators.stale {
+                return None;
+            }
+            let process = host
+                .accelerators
+                .value
+                .as_ref()?
+                .processes
+                .iter()
+                .find(|process| process.pid == pid)?;
+            Some((
+                process
+                    .name
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or(&process.name)
+                    .into(),
+                process.user.clone(),
+            ))
+        } else {
+            let host = self.controller.read(cx).snapshot()?;
+            if host.processes.stale {
+                return None;
+            }
+            let process = self.processes.read(cx).process(pid)?;
+            Some((process.name, process.user))
+        }
+    }
+    pub fn process(&self, pid: u32, cx: &App) -> Option<Process> {
+        self.processes.read(cx).process(pid)
+    }
+    pub fn process_details(&self, pid: u32, cx: &App) -> Option<ProcessDetails> {
+        self.processes.read(cx).details(pid)
+    }
+    pub fn sort_processes(&mut self, by: ProcessSort, cx: &mut Context<Self>) {
+        self.processes.update(cx, |panel, cx| panel.sort(by, cx));
+    }
+    pub fn process_domain(&self) -> CollectorDomain {
+        if self.gpu_processes {
+            CollectorDomain::Accelerator
+        } else {
+            CollectorDomain::Processes
+        }
+    }
+}
+
+impl Focusable for MonitorPanel {
+    fn focus_handle(&self, _: &App) -> FocusHandle {
+        self.focus_handle.clone()
     }
 }
 
 impl Render for MonitorPanel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let host = self
-            .target
-            .as_ref()
-            .and_then(|target| self.hosts.get(&target.terminal));
-        let snapshot = host.and_then(|host| host.snapshot.as_ref());
-        let system = host.and_then(|host| host.system.as_ref().map(|(_, system)| system));
-        let disks = host.and_then(|host| host.disks.as_ref().map(|(_, disks)| disks.as_slice()));
-        let problem = host.and_then(|host| host.problem.clone());
-        let interfaces_unfolded = self.interfaces_unfolded;
+        let controller = self.controller.read(cx);
+        let host = controller.snapshot();
+        let select = self.dispatch.clone();
+        let refresh = self.dispatch.clone();
+        let probe = self.dispatch.clone();
+        let sudo = self.dispatch.clone();
+        let configure = self.dispatch.clone();
+        let page = self.page;
+        let settings = self.dispatch.clone();
+        let open_settings = !self.settings_open;
+        let header = v_flex()
+            .flex_shrink_0()
+            .px_3()
+            .pt_3()
+            .gap_3()
+            .child(
+                h_flex()
+                    .gap_2()
+                    .child(
+                        div().flex_1().min_w_0().child(
+                            SegmentedControl::new("monitor-pages")
+                                .small()
+                                .selected_index(Some(match page {
+                                    MonitorPage::Overview => 0,
+                                    MonitorPage::Hardware => 1,
+                                    MonitorPage::Processes => 2,
+                                }))
+                                .segments([
+                                    Segment::new(t!("monitor.page.overview")),
+                                    Segment::new(t!("monitor.page.hardware")),
+                                    Segment::new(t!("monitor.page.processes")),
+                                ])
+                                .on_change(move |ix, window, cx| {
+                                    select.dispatch_action(
+                                        &SelectMonitorPage(
+                                            [
+                                                MonitorPage::Overview,
+                                                MonitorPage::Hardware,
+                                                MonitorPage::Processes,
+                                            ][*ix],
+                                        ),
+                                        window,
+                                        cx,
+                                    )
+                                }),
+                        ),
+                    )
+                    .child(
+                        Button::new("monitor-settings-toggle")
+                            .ghost()
+                            .small()
+                            .flex_shrink_0()
+                            .icon(CatalogIcon::Settings2)
+                            .tooltip(t!("monitor.settings"))
+                            .accessibility_label(t!("monitor.settings"))
+                            .toggled(self.settings_open)
+                            .on_click(move |_, window, cx| {
+                                settings.dispatch_action(
+                                    &SetMonitorSettings(open_settings),
+                                    window,
+                                    cx,
+                                )
+                            }),
+                    ),
+            )
+            .when(self.settings_open, |header| {
+                header.child(
+                    gpui_kit::component::group_box::GroupBox::new()
+                        .fill()
+                        .id("monitor-settings")
+                        .child(
+                            h_flex()
+                                .gap_2()
+                                .items_start()
+                                .child(
+                                    Switch::new("monitor-sudo")
+                                        .small()
+                                        .checked(self.allow_sudo)
+                                        .accessibility_label(t!("monitor.sudo.label"))
+                                        .tooltip(t!("monitor.sudo.description"))
+                                        .on_click(move |enabled, window, cx| {
+                                            sudo.dispatch_action(
+                                                &SetMonitorSudo(*enabled),
+                                                window,
+                                                cx,
+                                            )
+                                        }),
+                                )
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .text_sm()
+                                        .child(t!("monitor.sudo.label")),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(t!("monitor.sudo.description")),
+                        )
+                        .child(
+                            h_flex()
+                                .gap_2()
+                                .flex_wrap()
+                                .child(
+                                    Button::new("monitor-configure-access")
+                                        .outline()
+                                        .small()
+                                        .label(t!("monitor.access.configure"))
+                                        .on_click(move |_, window, cx| {
+                                            configure.dispatch_action(
+                                                &crate::app::ConfigureMonitorAccess,
+                                                window,
+                                                cx,
+                                            )
+                                        }),
+                                )
+                                .child(
+                                    Button::new("monitor-refresh")
+                                        .ghost()
+                                        .small()
+                                        .icon(CatalogIcon::RefreshCw)
+                                        .label(t!("tools.refresh"))
+                                        .on_click(move |_, window, cx| {
+                                            refresh.dispatch_action(
+                                                &RefreshMonitor(None),
+                                                window,
+                                                cx,
+                                            )
+                                        }),
+                                )
+                                .child(
+                                    Button::new("monitor-probe")
+                                        .ghost()
+                                        .small()
+                                        .icon(IconName::Search)
+                                        .label(t!("monitor.reprobe"))
+                                        .on_click(move |_, window, cx| {
+                                            probe.dispatch_action(
+                                                &RefreshMonitor(Some(CollectorDomain::Probe)),
+                                                window,
+                                                cx,
+                                            )
+                                        }),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(t!("monitor.sampling")),
+                        ),
+                )
+            });
         let cores = CoresLayout {
             unfolded: self.cores_unfolded,
             per_row: self
@@ -244,75 +498,240 @@ impl Render for MonitorPanel {
             width: self.cores_width.clone(),
             panel: cx.entity_id(),
         };
-        let dispatch = &self.dispatch;
-        // The scrollbar goes on a layer beside the scrolled content, which
-        // `overflow_y_scrollbar` lays out: on the content itself it would
-        // scroll away with it, and stop matching where the content is.
-        let content = v_flex()
-            .size_full()
-            .p_3()
-            .gap_3()
-            .map(|panel| match (snapshot, problem) {
-                // Numbers from before a failed reading still say something;
-                // the failure goes above them.
-                (Some(snapshot), problem @ (None | Some(Problem::Failed(_)))) => panel
-                    .when_some(problem, |panel, problem| {
-                        panel.child(render_problem(&problem, cx))
-                    })
-                    .when_some(system, |panel, system| {
-                        panel.child(render_system(system, snapshot.uptime, cx))
-                    })
-                    .child(render_cpu(system, snapshot, &cores, dispatch, cx))
-                    .child(render_memory(&snapshot.memory, cx))
-                    .child(render_network(snapshot, interfaces_unfolded, dispatch, cx))
-                    .when_some(disks, |panel, disks| panel.child(render_disks(disks, cx))),
-                (_, Some(problem)) => panel.child(render_problem(&problem, cx)),
-                (None, None) => panel.child(
-                    h_flex()
-                        .id("monitor-loading")
-                        .test_support()
-                        .gap_2()
-                        .justify_center()
-                        .py_8()
-                        .text_sm()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(Spinner::new().small())
-                        .child(t!("tools.reading")),
-                ),
-            })
-            .overflow_y_scrollbar();
-        div()
+        let mut content = v_flex().gap_3().p_3();
+        if let Some(host) = host {
+            if page == MonitorPage::Overview {
+                content = content.when(
+                    host.system.stale || host.system.status != MetricStatus::Ready,
+                    |content| {
+                        content.child(status_row(
+                            "system",
+                            &host.system.status,
+                            host.system.stale.then_some(host.system.observed).flatten(),
+                            cx,
+                        ))
+                    },
+                );
+                if let Some(snapshot) = &host.system.value {
+                    content = content
+                        .when_some(host.info.as_ref(), |panel, info| {
+                            panel.child(render_system(info, snapshot.uptime, cx))
+                        })
+                        .child(render_cpu(
+                            host.info.as_ref(),
+                            snapshot,
+                            &cores,
+                            &self.dispatch,
+                            cx,
+                        ))
+                        .when(snapshot.cpu.is_none(), |panel| {
+                            panel.child(
+                                div()
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(t!("monitor.waiting_delta")),
+                            )
+                        })
+                        .child(render_memory(&snapshot.memory, cx))
+                        .child(render_network(
+                            snapshot,
+                            self.interfaces_unfolded,
+                            &self.dispatch,
+                            cx,
+                        ));
+                }
+                if let Some(disks) = &host.disks.value {
+                    content = content.child(render_disks(disks, cx));
+                }
+                if !matches!(
+                    host.disks.status,
+                    MetricStatus::Ready | MetricStatus::Loading
+                ) {
+                    content = content.child(status_row(
+                        "disks",
+                        &host.disks.status,
+                        host.disks.stale.then_some(host.disks.observed).flatten(),
+                        cx,
+                    ));
+                }
+            } else if page == MonitorPage::Hardware {
+                if let Some(model) = &host.capabilities.board_model {
+                    content = content.child(
+                        div()
+                            .id("monitor-board-model")
+                            .test_support()
+                            .aria_label(model.clone())
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(model.clone()),
+                    );
+                }
+                if let Some(reading) = &host.accelerators.value {
+                    content = content
+                        .when(
+                            host.accelerators.stale
+                                || host.accelerators.status != MetricStatus::Ready,
+                            |content| {
+                                content.child(status_row(
+                                    "accelerator",
+                                    &host.accelerators.status,
+                                    host.accelerators
+                                        .stale
+                                        .then_some(host.accelerators.observed)
+                                        .flatten(),
+                                    cx,
+                                ))
+                            },
+                        )
+                        .child(GpuCards::header(reading, cx))
+                        .when(reading.devices.len() > 1, |content| {
+                            content.child(GpuCards::overview(reading, cx))
+                        })
+                        .child(self.cards.render_devices(reading, cx));
+                } else if !matches!(host.accelerators.status, MetricStatus::Unsupported) {
+                    content = content.child(status_row(
+                        "accelerator",
+                        &host.accelerators.status,
+                        None,
+                        cx,
+                    ));
+                }
+                if host.probe_status != MetricStatus::Ready {
+                    content = content.child(status_row("probe", &host.probe_status, None, cx));
+                }
+                content = content.children(super::hardware_cards::render(
+                    host,
+                    &self.details,
+                    &self.dispatch,
+                    cx,
+                ));
+                if host.hardware.values().all(|metric| {
+                    metric.value.as_ref().is_none_or(Vec::is_empty)
+                        && matches!(metric.status, MetricStatus::Ready | MetricStatus::Loading)
+                }) && host.accelerators.status == MetricStatus::Unsupported
+                    && host.probe_status == MetricStatus::Ready
+                {
+                    content = content.child(
+                        div()
+                            .id("monitor-no-hardware")
+                            .test_support()
+                            .aria_label(t!("monitor.no_hardware"))
+                            .text_sm()
+                            .child(t!("monitor.no_hardware")),
+                    );
+                }
+            } else if self.gpu_processes {
+                content = content.child(status_row(
+                    "accelerator",
+                    &host.accelerators.status,
+                    host.accelerators
+                        .stale
+                        .then_some(host.accelerators.observed)
+                        .flatten(),
+                    cx,
+                ));
+                if let Some(reading) = &host.accelerators.value {
+                    content = content.child(self.cards.render_processes(reading, true, cx));
+                }
+            }
+        } else {
+            content = content.child(
+                div()
+                    .id("monitor-loading")
+                    .test_support()
+                    .child(t!("tools.reading")),
+            );
+        }
+        let mut root = v_flex()
             .id("monitor")
             .test_support()
+            .track_focus(&self.focus_handle)
             .size_full()
-            .child(content)
+            .min_w_0()
+            .child(header);
+        if page == MonitorPage::Processes {
+            let dispatch = self.dispatch.clone();
+            root = root.child(
+                div().p_3().child(
+                    SegmentedControl::new("monitor-process-source")
+                        .small()
+                        .selected_index(Some(usize::from(self.gpu_processes)))
+                        .segments([
+                            Segment::new(t!("monitor.system.title")),
+                            Segment::new("GPU/NPU"),
+                        ])
+                        .on_change(move |ix, window, cx| {
+                            dispatch.dispatch_action(&SelectMonitorProcesses(*ix == 1), window, cx)
+                        }),
+                ),
+            );
+            if !self.gpu_processes {
+                return root.child(div().flex_1().min_h_0().child(self.processes.clone()));
+            }
+        }
+        if page == MonitorPage::Processes {
+            return root.child(content.flex_1().min_h_0());
+        }
+        root.child(
+            div()
+                .flex_1()
+                .min_h_0()
+                .child(div().size_full().overflow_y_scrollbar().child(content)),
+        )
     }
 }
 
-fn render_problem(problem: &Problem, cx: &App) -> impl IntoElement {
-    let (text, color) = match problem {
-        Problem::NotConnected => (
-            t!("monitor.panel.not_connected"),
-            cx.theme().muted_foreground,
-        ),
-        Problem::Unsupported(Some(system)) => (
-            t!("monitor.panel.unsupported_system", system = system),
-            cx.theme().muted_foreground,
-        ),
-        Problem::Unsupported(None) => {
-            (t!("monitor.panel.unsupported"), cx.theme().muted_foreground)
-        }
-        Problem::Failed(error) => (t!("tools.read_failed", error = error), cx.theme().danger),
+pub(super) fn status_text(status: &MetricStatus) -> SharedString {
+    match status {
+        MetricStatus::Loading => t!("tools.reading"),
+        MetricStatus::Ready => t!("monitor.state.ready"),
+        MetricStatus::Unsupported => t!("monitor.state.unsupported"),
+        MetricStatus::PermissionDenied => t!("monitor.state.denied"),
+        MetricStatus::SudoDenied => t!("monitor.state.sudo_denied"),
+        MetricStatus::SudoUnavailable => t!("monitor.state.sudo_unavailable"),
+        MetricStatus::Unavailable => t!("monitor.state.unavailable"),
+        MetricStatus::Timeout => t!("monitor.state.timeout"),
+        MetricStatus::Failed(_) => t!("monitor.state.failed"),
+    }
+}
+pub(super) fn status_row(
+    domain: &str,
+    status: &MetricStatus,
+    stale: Option<std::time::Instant>,
+    cx: &App,
+) -> impl IntoElement {
+    let current = if domain == "system" && *status == MetricStatus::Timeout {
+        t!("monitor.state.retrying_timeout")
+    } else {
+        status_text(status)
+    };
+    let text = if let Some(at) = stale {
+        t!(
+            "monitor.state.age",
+            seconds = cx
+                .background_executor()
+                .now()
+                .saturating_duration_since(at)
+                .as_secs(),
+            status = current
+        )
+    } else if *status == MetricStatus::Ready {
+        SharedString::default()
+    } else {
+        current
     };
     div()
-        .id("monitor-message")
+        .id(SharedString::from(if domain == "system" {
+            "monitor-message".into()
+        } else {
+            format!("monitor-status-{domain}")
+        }))
         .test_support()
         .aria_label(text.clone())
-        .text_sm()
-        .text_color(color)
+        .text_xs()
+        .text_color(cx.theme().muted_foreground)
         .child(text)
 }
-
 /// A card's quiet note at the end of its title row: 「1 核」.
 fn note(text: SharedString, cx: &App) -> AnyElement {
     div()
@@ -497,12 +916,12 @@ fn render_cpu(
 /// there are: 64 take three rows at the sidebar's usual width. Folded, only
 /// the first row; it measures its width for the next frame to know how many
 /// make one. Pointing at a bar tells its core's number and share.
-fn render_cores(cores: &[f32], layout: &CoresLayout, cx: &App) -> impl IntoElement {
-    let core = |index: usize, load: f32| {
+fn render_cores(cores: &[Option<f32>], layout: &CoresLayout, cx: &App) -> impl IntoElement {
+    let core = |index: usize, load: Option<f32>| {
         t!(
             "monitor.cpu.core",
             index = index,
-            load = format_percent(load)
+            load = load.map(format_percent).unwrap_or_else(|| "—".into())
         )
     };
     let label = cores
@@ -525,7 +944,7 @@ fn render_cores(cores: &[f32], layout: &CoresLayout, cx: &App) -> impl IntoEleme
             row.max_h(rems(1.5)).overflow_hidden()
         })
         .children(cores.iter().enumerate().map(|(index, load)| {
-            let color = load_color(*load, cx);
+            let color = load.map_or(cx.theme().muted_foreground, |value| load_color(value, cx));
             let tooltip = core(index, *load);
             div()
                 .id(("monitor-core", index as u64))
@@ -542,7 +961,7 @@ fn render_cores(cores: &[f32], layout: &CoresLayout, cx: &App) -> impl IntoEleme
                         .bottom_0()
                         .left_0()
                         .w_full()
-                        .h(relative(load.clamp(0., 100.) / 100.))
+                        .h(relative(load.unwrap_or(0.).clamp(0., 100.) / 100.))
                         .rounded_sm()
                         .bg(color),
                 )

@@ -66,9 +66,39 @@ pub fn heat(celsius: f32) -> Concern {
     }
 }
 
+/// 可选厂商查询的状态独立于基础设备读数
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum QueryStatus {
+    Ready,
+    #[default]
+    Unavailable,
+    Failed,
+    Timeout,
+    Invalid,
+}
+
+/// Ascend 310B 扩展读数，两个查询分别记录状态，缺失字段不当成零
+#[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
+pub(crate) struct AscendMetrics {
+    pub npu: u32,
+    pub chip: u32,
+    pub ai_cpu: Option<f32>,
+    pub control_cpu: Option<f32>,
+    pub memory_bandwidth: Option<f32>,
+    pub memory_frequency_mhz: Option<f32>,
+    pub usages_status: QueryStatus,
+    pub memory_status: QueryStatus,
+}
+
 /// One accelerator: a GPU, or one chip of an NPU card.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct Device {
+    /// 集成 GPU 使用系统共享内存，不将系统 RAM 冒充独立显存
+    pub integrated: bool,
+    pub(crate) ascend: Option<AscendMetrics>,
+    pub frequency_hz: Option<u64>,
     pub vendor: Vendor,
     /// 「GPU 0」, 「NPU 3」, or 「NPU 0.1」 for a chip of a card with more
     /// than one.
@@ -262,7 +292,13 @@ pub fn format_temperature(celsius: Option<f32>) -> String {
 
 /// 「512 W」.
 pub fn format_power(watts: Option<f32>) -> String {
-    watts.map_or("—".into(), |watts| format!("{watts:.0} W"))
+    watts.map_or("—".into(), |watts| {
+        if watts < 10. {
+            format!("{watts:.1} W")
+        } else {
+            format!("{watts:.0} W")
+        }
+    })
 }
 
 /// 「512 / 700 W」: drawn, and the most it may draw.
@@ -284,6 +320,9 @@ mod tests {
 
     fn device(utilization: Option<f32>, memory: Option<(u64, u64)>) -> Device {
         Device {
+            integrated: false,
+            ascend: None,
+            frequency_hz: None,
             vendor: Vendor::Nvidia,
             label: "GPU 0".into(),
             key: "GPU-0".into(),
@@ -386,6 +425,7 @@ mod tests {
         assert_eq!(format_temperature(Some(64.6)), "65 °C");
         assert_eq!(format_power_limit(Some(512.3), Some(700.)), "512 / 700 W");
         assert_eq!(format_power_limit(Some(92.9), None), "93 W");
+        assert_eq!(format_power(Some(4.7)), "4.7 W");
         assert_eq!(format_share(Some(91.6)), "92%");
         assert_eq!(format_share(None), "—");
     }

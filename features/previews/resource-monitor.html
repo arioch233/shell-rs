@@ -1,0 +1,167 @@
+<div id="shellrs-monitor-preview" aria-label="ShellRS 资源监控设计预览">
+  <style>
+    #shellrs-monitor-preview { --sr-bg:light-dark(#fff,#1e1e1f); --sr-fg:light-dark(#171717,#e0e0e4); --sr-muted:light-dark(#737373,#a3a3a8); --sr-fill:light-dark(#f5f5f5,#2f2f30); --sr-line:light-dark(#e5e5e5,#3b3b3d); --sr-active:light-dark(#e5e5e5,#48484a); --sr-success:light-dark(#16a34a,#4ade80); --sr-warning:light-dark(#a16207,#facc15); --sr-track:light-dark(#e5e5e5,#48484a); color:var(--sr-fg); font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif; }
+    #shellrs-monitor-preview * { box-sizing:border-box; }
+    #shellrs-monitor-preview [hidden] { display:none!important; }
+    #shellrs-monitor-preview button, #shellrs-monitor-preview input { font:inherit; color:inherit; }
+    #shellrs-monitor-preview button { border:0; background:transparent; border-radius:4px; padding:4px 7px; display:inline-flex; align-items:center; justify-content:center; gap:5px; white-space:nowrap; }
+    #shellrs-monitor-preview button:hover { background:var(--sr-active); }
+    #shellrs-monitor-preview button:focus-visible, #shellrs-monitor-preview summary:focus-visible { outline:2px solid var(--sr-muted); outline-offset:2px; }
+    #shellrs-monitor-preview svg.lucide { width:15px; height:15px; flex-shrink:0; stroke-width:1.65; }
+    #shellrs-monitor-preview .sr-window { background:var(--sr-bg); border:1px solid var(--sr-line); border-radius:9px; overflow:hidden; }
+    #shellrs-monitor-preview .sr-titlebar { display:flex; align-items:center; gap:8px; min-height:40px; background:var(--sr-fill); padding:8px 12px; border-bottom:1px solid var(--sr-line); }
+    #shellrs-monitor-preview .sr-title { font-weight:500; flex:1; }
+    #shellrs-monitor-preview .sr-muted { color:var(--sr-muted); }
+    #shellrs-monitor-preview .sr-small { font-size:12px; }
+    #shellrs-monitor-preview .sr-body { display:grid; grid-template-columns:148px minmax(0,1fr) 340px; align-items:stretch; min-height:755px; }
+    #shellrs-monitor-preview .sr-hosts { padding:10px 8px; border-right:1px solid var(--sr-line); }
+    #shellrs-monitor-preview .sr-hosts-label { padding:0 8px 12px; font-weight:500; }
+    #shellrs-monitor-preview .sr-host { display:flex; align-items:center; gap:7px; padding:6px 8px; border-radius:4px; }
+    #shellrs-monitor-preview .sr-host.current { background:var(--sr-fill); }
+    #shellrs-monitor-preview .sr-terminal { min-width:0; }
+    #shellrs-monitor-preview .sr-terminal-tab { min-height:36px; display:flex; align-items:center; gap:8px; border-bottom:1px solid var(--sr-line); padding:7px 12px; }
+    #shellrs-monitor-preview .sr-terminal pre { font:12px/1.8 Menlo,Consolas,monospace; padding:14px; margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }
+    #shellrs-monitor-preview .sr-terminal .sr-prompt { color:var(--sr-success); }
+    #shellrs-monitor-preview .sr-monitor { border-left:1px solid var(--sr-line); min-width:0; }
+    #shellrs-monitor-preview .sr-dock { display:flex; align-items:center; gap:7px; min-height:36px; padding:5px 10px; border-bottom:1px solid var(--sr-line); }
+    #shellrs-monitor-preview .sr-dock strong { font-size:12px; font-weight:500; flex:1; }
+    #shellrs-monitor-preview .sr-toolbar { display:flex; align-items:center; gap:8px; margin:12px 12px 0; }
+    #shellrs-monitor-preview .sr-tabs { display:flex; flex:1; border-radius:5px; background:var(--sr-fill); padding:2px; }
+    #shellrs-monitor-preview .sr-tabs button { flex:1; font-size:12px; padding:4px 7px; }
+    #shellrs-monitor-preview .sr-tabs button[aria-selected="true"] { background:var(--sr-bg); box-shadow:0 1px 2px #00000012; }
+    #shellrs-monitor-preview .sr-content { padding:12px; display:flex; flex-direction:column; gap:12px; }
+    #shellrs-monitor-preview .sr-box { background:var(--sr-fill); border-radius:6px; padding:16px; display:flex; flex-direction:column; gap:16px; }
+    #shellrs-monitor-preview .sr-heading { display:flex; align-items:center; gap:8px; min-width:0; }
+    #shellrs-monitor-preview .sr-heading>svg, #shellrs-monitor-preview .sr-heading>i { color:var(--sr-muted); }
+    #shellrs-monitor-preview .sr-heading strong { font-weight:500; flex:1; }
+    #shellrs-monitor-preview .sr-meta { margin-left:auto; font-size:12px; color:var(--sr-muted); }
+    #shellrs-monitor-preview .sr-fields { display:grid; grid-template-columns:1fr 1fr; gap:12px 16px; }
+    #shellrs-monitor-preview .sr-field { display:flex; flex-direction:column; gap:2px; min-width:0; }
+    #shellrs-monitor-preview .sr-field label { color:var(--sr-muted); font-size:12px; }
+    #shellrs-monitor-preview .sr-row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+    #shellrs-monitor-preview .sr-num { font-family:Menlo,Consolas,monospace; font-variant-numeric:tabular-nums; }
+    #shellrs-monitor-preview .sr-good { color:var(--sr-success); }
+    #shellrs-monitor-preview .sr-gauge-row { display:flex; align-items:center; gap:16px; }
+    #shellrs-monitor-preview .sr-gauge { width:64px; height:64px; flex-shrink:0; position:relative; color:var(--sr-success); }
+    #shellrs-monitor-preview .sr-gauge svg { width:64px; height:64px; transform:rotate(-90deg); }
+    #shellrs-monitor-preview .sr-gauge circle { fill:none; stroke-width:5; }
+    #shellrs-monitor-preview .sr-gauge .sr-gauge-track { stroke:var(--sr-track); }
+    #shellrs-monitor-preview .sr-gauge .sr-gauge-value { stroke:currentColor; stroke-linecap:round; }
+    #shellrs-monitor-preview .sr-gauge-label { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1.25; font-size:12px; }
+    #shellrs-monitor-preview .sr-gauge-label b { font-weight:600; font-size:18px; }
+    #shellrs-monitor-preview .sr-meters { flex:1; min-width:0; display:flex; flex-direction:column; gap:12px; }
+    #shellrs-monitor-preview .sr-meter { display:flex; flex-direction:column; gap:6px; }
+    #shellrs-monitor-preview .sr-track { background:var(--sr-track); height:4px; border-radius:3px; overflow:hidden; }
+    #shellrs-monitor-preview .sr-track span { display:block; height:100%; background:var(--sr-success); border-radius:3px; }
+    #shellrs-monitor-preview .sr-cores { display:flex; gap:3px; height:24px; align-items:flex-end; }
+    #shellrs-monitor-preview .sr-core { position:relative; width:6px; height:24px; background:color-mix(in srgb,var(--sr-success) 20%,transparent); border-radius:2px; }
+    #shellrs-monitor-preview .sr-core span { position:absolute; bottom:0; width:100%; background:var(--sr-success); border-radius:2px; }
+    #shellrs-monitor-preview details { font-size:12px; }
+    #shellrs-monitor-preview summary { color:var(--sr-muted); list-style:none; display:flex; align-items:center; gap:5px; }
+    #shellrs-monitor-preview summary::-webkit-details-marker { display:none; }
+    #shellrs-monitor-preview summary::after { content:'›'; margin-left:auto; }
+    #shellrs-monitor-preview details[open]>summary::after { content:'⌄'; }
+    #shellrs-monitor-preview .sr-details { margin-top:10px; display:flex; flex-direction:column; gap:7px; color:var(--sr-muted); }
+    #shellrs-monitor-preview .sr-path { font:11px/1.5 Menlo,Consolas,monospace; overflow-wrap:anywhere; }
+    #shellrs-monitor-preview .sr-settings { margin:12px 12px 0; padding:12px; background:var(--sr-fill); border-radius:6px; }
+    #shellrs-monitor-preview .sr-settings label { display:flex; align-items:center; gap:8px; }
+    #shellrs-monitor-preview .sr-settings p { margin:6px 0 0 24px; color:var(--sr-muted); font-size:12px; }
+    #shellrs-monitor-preview .sr-permission { font-size:12px; display:flex; flex-direction:column; align-items:flex-start; gap:8px; }
+    #shellrs-monitor-preview .sr-permission button { border:1px solid var(--sr-line); background:var(--sr-bg); }
+    #shellrs-monitor-preview .sr-footer { display:flex; justify-content:space-between; gap:10px; border-top:1px solid var(--sr-line); background:var(--sr-fill); padding:5px 12px; font-size:11px; color:var(--sr-muted); }
+    #shellrs-monitor-preview .sr-source { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+    #shellrs-monitor-preview .sr-source select { background:var(--sr-bg); color:var(--sr-fg); border:1px solid var(--sr-line); border-radius:4px; font:inherit; padding:4px 7px; }
+    #shellrs-monitor-preview table { width:100%; border-collapse:collapse; font-size:12px; }
+    #shellrs-monitor-preview th { font-weight:400; color:var(--sr-muted); }
+    #shellrs-monitor-preview td, #shellrs-monitor-preview th { padding:9px 4px; text-align:right; border-bottom:1px solid var(--sr-line); }
+    #shellrs-monitor-preview td:first-child, #shellrs-monitor-preview th:first-child { text-align:left; }
+    @media(max-width:800px) { #shellrs-monitor-preview .sr-body { grid-template-columns:minmax(0,1fr) 340px; } #shellrs-monitor-preview .sr-hosts { display:none; } }
+    @media(max-width:560px) { #shellrs-monitor-preview .sr-body { display:block; min-height:0; } #shellrs-monitor-preview .sr-terminal { display:none; } #shellrs-monitor-preview .sr-monitor { border-left:0; } #shellrs-monitor-preview .sr-titlebar .sr-muted { font-size:11px; } }
+  </style>
+  <div class="sr-window">
+    <div class="sr-titlebar"><i data-lucide="terminal" aria-hidden="true"></i><span class="sr-title">ShellRS</span><span class="sr-muted sr-small">设计预览 · 示例数据</span></div>
+    <div class="sr-body">
+      <aside class="sr-hosts" aria-label="主机列表"><div class="sr-hosts-label">主机</div><div class="sr-host sr-muted"><i data-lucide="chevron-down" aria-hidden="true"></i>开发</div><div class="sr-host current"><i data-lucide="monitor" aria-hidden="true"></i>rk3588</div><div class="sr-host"><i data-lucide="monitor" aria-hidden="true"></i>dev-box</div></aside>
+      <div class="sr-terminal"><div class="sr-terminal-tab"><i data-lucide="terminal" aria-hidden="true"></i>rk3588 <span class="sr-muted">×</span></div><pre><span class="sr-prompt">rockchip@rk3588:~$</span> uname -m
+aarch64
+
+<span class="sr-prompt">rockchip@rk3588:~$</span> ▏</pre></div>
+      <section class="sr-monitor" aria-label="资源监控">
+        <div class="sr-dock"><i data-lucide="activity" aria-hidden="true"></i><strong>资源监控 · rk3588</strong><span class="sr-muted sr-small" id="sr-sampling">2 秒</span></div>
+        <div class="sr-toolbar"><div class="sr-tabs" role="tablist" aria-label="监控分类"><button type="button" role="tab" id="sr-tab-overview" aria-selected="true" aria-controls="sr-overview" data-page="overview">概览</button><button type="button" role="tab" id="sr-tab-hardware" aria-selected="false" aria-controls="sr-hardware" data-page="hardware">硬件</button><button type="button" role="tab" id="sr-tab-processes" aria-selected="false" aria-controls="sr-processes" data-page="processes">进程</button></div><button type="button" id="sr-settings-toggle" aria-label="采集设置" aria-expanded="false" aria-controls="sr-settings"><i data-lucide="settings-2" aria-hidden="true"></i></button></div>
+        <div class="sr-settings" id="sr-settings" hidden><label><input id="sr-sudo" type="checkbox" checked>使用 sudo 读取硬件指标</label><p>仅此主机；需要远端允许免密读取</p></div>
+        <div class="sr-content" id="sr-overview" role="tabpanel" aria-labelledby="sr-tab-overview">
+          <section class="sr-box"><div class="sr-heading"><i data-lucide="monitor" aria-hidden="true"></i><strong>系统</strong></div><div class="sr-fields"><div class="sr-field"><label>主机名</label>rk3588</div><div class="sr-field"><label>架构</label>aarch64</div><div class="sr-field"><label>系统</label>Ubuntu 22.04</div><div class="sr-field"><label>运行时间</label>3 天 12 小时</div></div></section>
+          <section class="sr-box"><div class="sr-heading"><i data-lucide="cpu" aria-hidden="true"></i><strong>CPU</strong><span class="sr-meta">8 核</span></div><div class="sr-muted">Rockchip RK3588</div><div class="sr-gauge-row"><div class="sr-gauge" role="img" aria-label="CPU 使用率 24%"><svg viewBox="0 0 64 64" aria-hidden="true"><circle class="sr-gauge-track" cx="32" cy="32" r="28"/><circle class="sr-gauge-value" cx="32" cy="32" r="28" pathLength="100" stroke-dasharray="24 100"/></svg><div class="sr-gauge-label"><b class="sr-num">24</b>%</div></div><div class="sr-meters"><div class="sr-meter"><div class="sr-row"><span>平均使用率</span><span class="sr-num sr-good">24.0%</span></div><div class="sr-track"><span style="width:24%"></span></div></div><div class="sr-cores" id="sr-cores" aria-label="各核心负载"></div></div></div></section>
+          <section class="sr-box"><div class="sr-heading"><i data-lucide="memory-stick" aria-hidden="true"></i><strong>内存</strong></div><div class="sr-gauge-row"><div class="sr-gauge" role="img" aria-label="内存使用率 38%"><svg viewBox="0 0 64 64" aria-hidden="true"><circle class="sr-gauge-track" cx="32" cy="32" r="28"/><circle class="sr-gauge-value" cx="32" cy="32" r="28" pathLength="100" stroke-dasharray="38 100"/></svg><div class="sr-gauge-label"><b class="sr-num">38</b>%</div></div><div class="sr-meters"><div class="sr-meter"><div class="sr-row"><span>物理内存</span><span class="sr-num sr-good">38.0%</span></div><div class="sr-track"><span style="width:38%"></span></div></div><div class="sr-num sr-small">5.9 GB <span class="sr-muted">/ 15.5 GB</span></div></div></div></section>
+          <section class="sr-box"><div class="sr-heading"><i data-lucide="network" aria-hidden="true"></i><strong>网络</strong><span class="sr-meta">eth0</span></div><div class="sr-row sr-num"><span>↓ 2.4 MB/s</span><span>↑ 186 KB/s</span></div></section>
+          <section class="sr-box"><div class="sr-heading"><i data-lucide="hard-drive" aria-hidden="true"></i><strong>磁盘</strong><span class="sr-meta">/</span></div><div class="sr-meter"><div class="sr-row"><span class="sr-num sr-small">42.1 GB <span class="sr-muted">/ 116 GB</span></span><span class="sr-num sr-good">36.3%</span></div><div class="sr-track"><span style="width:36.3%"></span></div></div></section>
+        </div>
+        <div class="sr-content" id="sr-hardware" role="tabpanel" aria-labelledby="sr-tab-hardware" hidden>
+          <section class="sr-box"><div class="sr-heading"><i data-lucide="gpu" aria-hidden="true"></i><strong>GPU</strong><span class="sr-meta">Mali-G610</span></div><div class="sr-meter"><div class="sr-row"><span>使用率</span><span class="sr-num sr-good">18.0%</span></div><div class="sr-track"><span style="width:18%"></span></div></div><div class="sr-row sr-small"><span class="sr-muted">当前频率</span><span class="sr-num">600 MHz</span></div><details><summary>采集详情</summary><div class="sr-details"><span>来源：devfreq</span><span class="sr-path">/sys/class/devfreq/fb000000.gpu/</span></div></details></section>
+          <section class="sr-box"><div class="sr-heading"><i data-lucide="scan-line" aria-hidden="true"></i><strong>RGA</strong><span class="sr-meta">3 个调度器</span></div><div class="sr-meters sr-privileged" id="sr-rga-meters"></div><div class="sr-permission" hidden><span class="sr-muted">需要 sudo 权限读取负载</span><button type="button" data-enable-sudo>设置读取权限</button></div><details><summary>采集详情</summary><div class="sr-details"><span>各调度器独立显示，不计算合计负载</span><span class="sr-path">/sys/kernel/debug/rkrga/load</span></div></details></section>
+          <section class="sr-box"><div class="sr-heading"><i data-lucide="cpu" aria-hidden="true"></i><strong>NPU</strong><span class="sr-meta">RKNN · 3 核</span></div><div class="sr-meters sr-privileged" id="sr-npu-meters"></div><div class="sr-permission" hidden><span class="sr-muted">需要 sudo 权限读取负载</span><button type="button" data-enable-sudo>设置读取权限</button></div><details><summary>采集详情</summary><div class="sr-details"><span>来源：rknpu</span><span class="sr-path">/sys/kernel/debug/rknpu/load</span></div></details></section>
+          <section class="sr-box"><div class="sr-heading"><i data-lucide="thermometer" aria-hidden="true"></i><strong>温度</strong></div><div class="sr-row"><span class="sr-muted">SoC</span><span class="sr-num">48.5 °C</span></div><details><summary>更多传感器</summary><div class="sr-details"><div class="sr-row"><span>GPU</span><span class="sr-num">46.2 °C</span></div><div class="sr-row"><span>NPU</span><span class="sr-num">47.8 °C</span></div></div></details></section>
+        </div>
+        <div class="sr-content" id="sr-processes" role="tabpanel" aria-labelledby="sr-tab-processes" hidden><div class="sr-source"><label for="sr-process-source">进程来源</label><select id="sr-process-source"><option value="system">系统进程</option><option value="gpu">GPU 进程</option></select></div><div id="sr-process-table"></div></div>
+      </section>
+    </div>
+    <div class="sr-footer"><span>SSH · rk3588</span><span>预览数据，不连接远端</span></div>
+  </div>
+  <script>
+    (() => {
+      const root = document.getElementById('shellrs-monitor-preview');
+      const state = { page:'overview', sudo:true, theme:'auto' };
+      const find = selector => root.querySelector(selector);
+      const all = selector => [...root.querySelectorAll(selector)];
+      const meter = (label, value) => `<div class="sr-meter"><div class="sr-row"><span>${label}</span><span class="sr-num sr-good">${value.toFixed(1)}%</span></div><div class="sr-track" role="progressbar" aria-label="${label}" aria-valuenow="${value}" aria-valuemin="0" aria-valuemax="100"><span style="width:${value}%"></span></div></div>`;
+      find('#sr-rga-meters').innerHTML = [['RGA3 · 0',32],['RGA3 · 1',8],['RGA2',0]].map(([label,value])=>meter(label,value)).join('');
+      find('#sr-npu-meters').innerHTML = [['核心 0',46],['核心 1',42],['核心 2',39]].map(([label,value])=>meter(label,value)).join('');
+      find('#sr-cores').innerHTML = [12,18,8,10,36,42,28,38].map((value,index)=>`<span class="sr-core" data-tooltip="CPU ${index}: ${value}%"><span style="height:${value}%"></span></span>`).join('');
+      function render() {
+        root.style.colorScheme = state.theme === 'auto' ? 'light dark' : state.theme;
+        all('[data-page]').forEach(button=>button.setAttribute('aria-selected',String(button.dataset.page===state.page)));
+        ['overview','hardware','processes'].forEach(page=>find('#sr-'+page).hidden=page!==state.page);
+        find('#sr-sampling').textContent = state.page==='hardware'?'1 秒':'2 秒';
+        find('#sr-sudo').checked = state.sudo;
+        all('.sr-privileged').forEach(element=>element.hidden=!state.sudo);
+        all('.sr-permission').forEach(element=>element.hidden=state.sudo);
+      }
+      function save() {
+        if(window.openai?.setWidgetState) window.openai.setWidgetState({modelContent:{design:'保留原有卡片风格',page:state.page},privateContent:{...state}}).catch(()=>{});
+      }
+      function restore(saved) {
+        const incoming=saved?.privateContent;
+        if(incoming) {
+          if(['overview','hardware','processes'].includes(incoming.page)) state.page=incoming.page;
+          if(['auto','light','dark'].includes(incoming.theme)) state.theme=incoming.theme;
+          if(typeof incoming.sudo==='boolean') state.sudo=incoming.sudo;
+        }
+        render();
+      }
+      all('[data-page]').forEach(button=>button.addEventListener('click',()=>{state.page=button.dataset.page;render();save();}));
+      all('[data-page]').forEach((button,index)=>button.addEventListener('keydown',event=>{
+        if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+        event.preventDefault(); const tabs=all('[data-page]');
+        const next=event.key==='Home'?0:event.key==='End'?2:(index+(event.key==='ArrowRight'?1:2))%3;
+        tabs[next].focus();tabs[next].click();
+      }));
+      function settings(open) {find('#sr-settings').hidden=!open;find('#sr-settings-toggle').setAttribute('aria-expanded',String(open));}
+      find('#sr-settings-toggle').addEventListener('click',()=>settings(find('#sr-settings').hidden));
+      all('[data-enable-sudo]').forEach(button=>button.addEventListener('click',()=>{settings(true);find('#sr-sudo').focus();}));
+      find('#sr-sudo').addEventListener('change',event=>{state.sudo=event.target.checked;render();save();});
+      function processes() {
+        const gpu=find('#sr-process-source').value==='gpu';
+        find('#sr-process-table').innerHTML=gpu?'<div class="sr-muted sr-small">此设备未提供 GPU 进程指标</div>':'<table aria-label="系统进程示例"><thead><tr><th>进程</th><th>PID</th><th>CPU</th><th>内存</th></tr></thead><tbody><tr><td>rknn_server</td><td class="sr-num">2148</td><td class="sr-num">12.8%</td><td class="sr-num">248 MB</td></tr><tr><td>ffmpeg</td><td class="sr-num">3102</td><td class="sr-num">8.4%</td><td class="sr-num">186 MB</td></tr><tr><td>sshd</td><td class="sr-num">1062</td><td class="sr-num">0.2%</td><td class="sr-num">8 MB</td></tr></tbody></table>';
+      }
+      find('#sr-process-source').addEventListener('change',processes);
+      window.addEventListener('openai:set_globals',event=>{if(event.detail?.globals?.widgetState)restore(event.detail.globals.widgetState);});
+      restore(window.openai?.widgetState);processes();
+      if(globalThis.Tweak) {
+        const tweak=new Tweak({container:root,onChange:()=>{render();save();}});
+        tweak.addSelect(state,'theme',{label:'预览主题',options:[{label:'跟随系统',value:'auto'},{label:'浅色',value:'light'},{label:'深色',value:'dark'}]});
+        tweak.addToggle(state,'sudo',{label:'模拟硬件读取权限'});
+      }
+    })();
+  </script>
+</div>

@@ -2,15 +2,6 @@ _version: 2
 
 # 系统监控: a Linux host's CPU, memory, network and disks.
 
-monitor.panel.not_connected:
-  zh-CN: 终端没有连接。连接后这里显示主机的 CPU、内存、网络和磁盘。
-  en: The terminal isn’t connected. Once it is, the host’s CPU, memory, network and disks show here.
-monitor.panel.unsupported_system:
-  zh-CN: 暂不支持 %{system} 的监控，目前只支持 Linux 主机。
-  en: Monitoring %{system} isn’t supported yet. Only Linux hosts are supported.
-monitor.panel.unsupported:
-  zh-CN: 暂不支持这台主机的监控，目前只支持 Linux 主机。
-  en: Monitoring this host isn’t supported yet. Only Linux hosts are supported.
 
 monitor.system.title:
   zh-CN: 系统
@@ -90,3 +81,728 @@ monitor.disks.none:
 monitor.disks.label:
   zh-CN: "%{percent}，%{used} / %{total}"
   en: "%{percent}, %{used} / %{total}"
+
+monitor.page.overview:
+  zh-CN: 概览
+  en: Overview
+monitor.page.hardware:
+  zh-CN: 硬件
+  en: Hardware
+monitor.page.processes:
+  zh-CN: 进程
+  en: Processes
+monitor.sampling:
+  zh-CN: 系统采样 2 秒
+  en: System sampling every 2s
+monitor.reprobe:
+  zh-CN: 重新检测硬件
+  en: Detect hardware
+monitor.waiting_delta:
+  zh-CN: 等待下一次采样
+  en: Waiting for the next sample
+monitor.state.ready:
+  zh-CN: 正常
+  en: Ready
+monitor.state.unsupported:
+  zh-CN: 驱动未提供
+  en: Not provided by the driver
+monitor.state.denied:
+  zh-CN: 无读取权限
+  en: Read permission required
+monitor.state.unavailable:
+  zh-CN: 暂不可用
+  en: Unavailable
+monitor.state.timeout:
+  zh-CN: 采样超时，已暂停；重连后重试
+  en: Sampling timed out and paused. Reconnect to retry.
+monitor.state.failed:
+  zh-CN: 采集失败，可刷新重试
+  en: Collection failed. Refresh to retry.
+monitor.state.stale:
+  zh-CN: 历史数据
+  en: Previous sample
+monitor.state.age:
+  zh-CN: "历史数据 · %{seconds} 秒前 · %{status}"
+  en: "Previous sample · %{seconds}s ago · %{status}"
+monitor.no_hardware:
+  zh-CN: 未检测到可用的硬件指标
+  en: No hardware metrics available
+monitor.thermal:
+  zh-CN: 温度
+  en: Temperature
+monitor.connection_changed:
+  zh-CN: 连接已改变，请重新选择进程
+  en: The connection changed. Select the process again.
+
+monitor.state.retrying_timeout:
+  zh-CN: 系统采样超时，稍后重试
+  en: System sampling timed out. Retrying shortly.
+
+monitor.sudo.label:
+  zh-CN: sudo 读取硬件指标
+  en: Read hardware metrics with sudo
+monitor.sudo.description:
+  zh-CN: 仅对这台主机生效；需要允许免密读取 RGA、NPU、MPP 时钟或 Jetson ACTMON 节点
+  en: Applies to this host only. Requires passwordless permission to read RGA, NPU, MPP clocks or Jetson ACTMON nodes.
+monitor.state.sudo_denied:
+  zh-CN: sudo 读取失败，请检查免密授权
+  en: sudo read failed. Check passwordless permissions.
+monitor.state.sudo_unavailable:
+  zh-CN: sudo 或读取工具不可用
+  en: sudo or the reader is unavailable
+
+monitor.settings:
+  zh-CN: 采集设置
+  en: Collection settings
+monitor.sudo.configure:
+  zh-CN: 设置读取权限
+  en: Configure access
+monitor.hardware.details:
+  zh-CN: 采集详情
+  en: Collection details
+monitor.hardware.no_load:
+  zh-CN: 暂无负载指标
+  en: No load metrics available
+monitor.hardware.independent_load:
+  zh-CN: 各单元独立采样，不计算合计负载
+  en: Units are sampled independently; loads are not added together.
+monitor.hardware.previous:
+  zh-CN: "历史数据 · %{status}"
+  en: "Previous sample · %{status}"
+monitor.hardware.observed:
+  zh-CN: "%{seconds} 秒前采样"
+  en: Sampled %{seconds}s ago
+monitor.hardware.core:
+  zh-CN: "核心 %{index}"
+  en: "Core %{index}"
+monitor.hardware.frequency:
+  zh-CN: 当前频率
+  en: Current frequency
+monitor.hardware.usage:
+  zh-CN: 使用率
+  en: Usage
+monitor.hardware.load:
+  zh-CN: 负载
+  en: Load
+monitor.pressure:
+  zh-CN: 资源压力
+  en: Resource pressure
+
+monitor.access.configure:
+  zh-CN: 配置免密读取…
+  en: Set up passwordless reads…
+monitor.access.title:
+  zh-CN: 为“%{host}”配置读取权限
+  en: Set up read access for “%{host}”
+monitor.access.description:
+  zh-CN: 将为当前 SSH 用户创建或更新 /etc/sudoers.d/shellrs-monitor-<UID>，仅允许免密读取 RGA 的 load、hardware，NPU 的 load、driver_version、version 节点，MPP 的 clk_summary 时钟节点，以及 Jetson 六个媒体引擎的固定 ACTMON usage 节点。需要远端管理员权限，配置成功后自动启用采集。
+  en: Creates or updates /etc/sudoers.d/shellrs-monitor-<UID> for the current SSH user, allowing passwordless reads of only RGA load and hardware, NPU load, driver_version and version, MPP clk_summary, and fixed ACTMON usage nodes for six Jetson media engines. Requires remote administrator permission. Collection is enabled after setup succeeds.
+monitor.access.password:
+  zh-CN: 远端 sudo 密码
+  en: Remote sudo password
+monitor.access.password_hint:
+  zh-CN: 仅用于本次授权，不保存。root 或已具备免密管理权限时可留空。
+  en: Used only for this setup and never saved. Leave empty for root or existing passwordless administrator access.
+monitor.access.install:
+  zh-CN: 授权并配置
+  en: Authorize and configure
+monitor.access.working:
+  zh-CN: 正在配置…
+  en: Configuring…
+monitor.access.changed:
+  zh-CN: 连接已断开或重新建立，请关闭此窗口后重试
+  en: The connection closed or reconnected. Close this dialog and try again.
+monitor.access.failed:
+  zh-CN: 配置未确认成功。请检查 sudo 密码、管理员权限及 visudo 是否可用；也可能是策略校验失败或连接中断。可重试配置。
+  en: Setup was not confirmed. Check the sudo password, administrator permission and visudo availability. Policy validation or the connection may also have failed. You can retry setup.
+monitor.access.ready:
+  zh-CN: 已配置读取权限，正在重新探测硬件
+  en: Read access configured. Probing hardware again.
+monitor.access.completed_elsewhere:
+  zh-CN: 原主机的读取权限已配置。当前连接已改变，请切回原主机并启用 sudo 读取。
+  en: Read access was configured on the original host. The active connection changed; return to that host and enable sudo reads.
+
+monitor.hardware.units.one:
+  en: "%{count} unit"
+monitor.hardware.units.other:
+  zh-CN: "%{count} 个单元"
+  en: "%{count} units"
+monitor.hardware.sensors.one:
+  en: "%{count} sensor"
+monitor.hardware.sensors.other:
+  zh-CN: "%{count} 个传感器"
+  en: "%{count} sensors"
+monitor.hardware.driver:
+  zh-CN: "驱动 %{version}"
+  en: "Driver %{version}"
+monitor.hardware.rga_core:
+  zh-CN: "%{kind} · 核心 %{index}"
+  en: "%{kind} · Core %{index}"
+monitor.hardware.devfreq_load:
+  zh-CN: 设备负载（devfreq）
+  en: Device load (devfreq)
+monitor.hardware.devfreq_explanation:
+  zh-CN: devfreq 读数与核心负载来自不同接口，不计入核心数量，也不作为各核心的平均值
+  en: devfreq and core loads use different interfaces. The device reading is neither a core nor the average core load.
+monitor.hardware.no_core_load:
+  zh-CN: 暂无核心负载
+  en: No core load available
+monitor.thermal.soc:
+  zh-CN: 芯片
+  en: SoC
+monitor.thermal.big:
+  zh-CN: "CPU 大核组 %{index}"
+  en: "CPU big cluster %{index}"
+monitor.thermal.little:
+  zh-CN: CPU 小核组
+  en: CPU little cluster
+monitor.thermal.center:
+  zh-CN: 中央温区
+  en: Center thermal zone
+
+monitor.hardware.unknown_model:
+  zh-CN: 型号未提供
+  en: Model unavailable
+monitor.hardware.model:
+  zh-CN: GPU 型号
+  en: GPU model
+monitor.hardware.device_node:
+  zh-CN: 设备节点
+  en: Device node
+monitor.hardware.source:
+  zh-CN: 读取路径
+  en: Source path
+monitor.hardware.original_name:
+  zh-CN: 原始名称
+  en: Original name
+monitor.hardware.raw_output:
+  zh-CN: 原始读数
+  en: Raw reading
+monitor.hardware.driver_info:
+  zh-CN: 驱动信息
+  en: Driver information
+monitor.hardware.sample_status:
+  zh-CN: 采集状态
+  en: Collection status
+monitor.thermal.highest:
+  zh-CN: 当前最高温度
+  en: Highest temperature
+monitor.thermal.group.soc:
+  zh-CN: 芯片与温区
+  en: SoC and thermal zones
+monitor.thermal.group.accelerators:
+  zh-CN: GPU / NPU
+  en: GPU / NPU
+monitor.thermal.group.additional:
+  zh-CN: 其他传感器
+  en: Other sensors
+monitor.hardware.device_name:
+  zh-CN: 设备名称
+  en: Device name
+
+monitor.hardware.rga_identity:
+  zh-CN: "硬件类型：%{kind}\n驱动调度器：scheduler[%{index}]"
+  en: "Hardware type: %{kind}\nDriver scheduler: scheduler[%{index}]"
+monitor.hardware.rga_scheduler_explanation:
+  zh-CN: 核心编号沿用驱动的调度器编号，与上方负载条一一对应；RGA2、RGA3 表示硬件类型。
+  en: Core numbers follow the driver scheduler IDs and match the load bars above. RGA2 and RGA3 identify the hardware type.
+
+monitor.mpp.encoder:
+  zh-CN: "编码"
+  en: "Encoder"
+
+monitor.mpp.decoder:
+  zh-CN: "解码"
+  en: "Decoder"
+
+monitor.mpp.other_codec:
+  zh-CN: "其他"
+  en: "Other"
+
+monitor.mpp.encoder_core:
+  zh-CN: "编码核心 %{index}"
+  en: "Encoder core %{index}"
+
+monitor.mpp.decoder_core:
+  zh-CN: "解码核心 %{index}"
+  en: "Decoder core %{index}"
+
+monitor.mpp.session_title:
+  zh-CN: "%{kind}会话 %{index} · PID %{pid}"
+  en: "%{kind} session %{index} · PID %{pid}"
+
+monitor.mpp.supports:
+  zh-CN: "支持的硬件设备"
+  en: "Supported hardware devices"
+
+monitor.mpp.timing:
+  zh-CN: "任务时序诊断"
+  en: "Task timing diagnostics"
+
+monitor.mpp.load_interval:
+  zh-CN: "负载采样窗口（ms）"
+  en: "Load sampling window (ms)"
+
+monitor.mpp.sessions:
+  zh-CN: "编解码会话"
+  en: "Codec sessions"
+
+monitor.mpp.clocks:
+  zh-CN: "核心时钟"
+  en: "Core clocks"
+
+monitor.mpp.tasks:
+  zh-CN: "解码任务计数"
+  en: "Decode task counters"
+
+monitor.mpp.diagnostics:
+  zh-CN: "编码器诊断"
+  en: "Encoder diagnostics"
+
+monitor.mpp.memory:
+  zh-CN: "驱动报告的内存"
+  en: "Driver-reported memory"
+
+monitor.mpp.fps_in:
+  zh-CN: "配置输入 FPS"
+  en: "Configured input FPS"
+
+monitor.mpp.fps_out:
+  zh-CN: "配置输出 FPS"
+  en: "Configured output FPS"
+
+monitor.mpp.rc_mode:
+  zh-CN: "码率控制"
+  en: "Rate control"
+
+monitor.mpp.bitrate:
+  zh-CN: "配置码率"
+  en: "Configured bitrate"
+
+monitor.mpp.counts:
+  zh-CN: "%{total} 路会话 · 编码 %{encoders} / 解码 %{decoders}"
+  en: "%{total} sessions · %{encoders} encode / %{decoders} decode"
+
+monitor.mpp.fps_sum:
+  zh-CN: "编码实际 FPS 合计"
+  en: "Actual encoder FPS sum"
+
+monitor.mpp.actual_fps:
+  zh-CN: "实际编码"
+  en: "Actual encoding"
+
+monitor.mpp.partial_fps:
+  zh-CN: "仅 %{known}/%{total} 路编码会话提供实际 FPS"
+  en: "Actual FPS available for %{known}/%{total} encoding sessions"
+
+monitor.mpp.more_sessions:
+  zh-CN: "显示全部 %{count} 路会话"
+  en: "Show all %{count} sessions"
+
+monitor.mpp.clock_note:
+  zh-CN: "时钟频率和使能计数不代表硬件利用率"
+  en: "Clock rates and enable counts are not hardware utilization"
+
+monitor.mpp.task_value:
+  zh-CN: "任务索引 %{index} · 增长 %{rate} 次/秒"
+  en: "Task index %{index} · %{rate} tasks/s"
+
+monitor.mpp.clock_detail:
+  zh-CN: "%{name}: %{rate} MHz · 使能计数 %{enabled}"
+  en: "%{name}: %{rate} MHz · enable count %{enabled}"
+
+monitor.mpp.preview:
+  zh-CN: "采样文本 %{bytes} 字节，以下最多预览 2048 字节"
+  en: "Sample text: %{bytes} bytes; preview limited to 2048 bytes"
+
+monitor.mpp.timing_off:
+  zh-CN: "关闭（只读）"
+  en: "Disabled (read-only)"
+
+monitor.mpp.timing_on:
+  zh-CN: "开启（只读）"
+  en: "Enabled (read-only)"
+
+monitor.mpp.task_note:
+  zh-CN: "任务增长率不是解码 FPS；首样本、读取失败或计数回退后显示 —"
+  en: "Task rate is not decode FPS; first samples, read failures and counter resets show —"
+
+monitor.mpp.fewer_sessions:
+  zh-CN: 仅显示前 32 路会话
+  en: Show first 32 sessions
+
+monitor.mpp.no_core_clocks:
+  zh-CN: 未发现匹配的 RKVENC / RKVDEC 核心时钟
+  en: No matching RKVENC / RKVDEC core clocks found
+
+monitor.mpp.session_heading:
+  zh-CN: "%{kind} · 会话 %{index}"
+  en: "%{kind} · Session %{index}"
+monitor.mpp.actual_fps_column:
+  zh-CN: 实际 FPS
+  en: Actual FPS
+monitor.mpp.task_rate:
+  zh-CN: "%{rate} 次/秒"
+  en: "%{rate} tasks/s"
+monitor.mpp.task_index:
+  zh-CN: 任务索引
+  en: Task index
+monitor.mpp.task_rate_note:
+  zh-CN: 任务增长率不等于解码 FPS
+  en: Task rate is not decode FPS
+monitor.mpp.core_clock:
+  zh-CN: 核心
+  en: Core
+monitor.mpp.bus_clock:
+  zh-CN: 总线
+  en: Bus
+monitor.mpp.peripheral_clock:
+  zh-CN: 外设
+  en: Peripheral
+monitor.mpp.clock_identity:
+  zh-CN: "%{name} · 使能 %{count}"
+  en: "%{name} · enabled %{count}"
+
+monitor.hardware.clock_only:
+  zh-CN: "%{engine} · 当前时钟，不代表使用率"
+  en: "%{engine} · Current clock, not utilization"
+monitor.jetson.encoder:
+  zh-CN: 视频编码
+  en: Video encoder
+monitor.jetson.decoder:
+  zh-CN: 视频解码
+  en: Video decoder
+monitor.jetson.jpeg:
+  zh-CN: JPEG 编解码
+  en: JPEG codec
+monitor.jetson.compositor:
+  zh-CN: 图像合成与转换
+  en: Image composition and conversion
+monitor.jetson.optical_flow:
+  zh-CN: 光流加速
+  en: Optical flow accelerator
+monitor.thermal.junction:
+  zh-CN: 芯片结温
+  en: Junction temperature
+monitor.thermal.soc_zone:
+  zh-CN: SoC 温区 %{index}
+  en: SoC zone %{index}
+monitor.thermal.cv_zone:
+  zh-CN: 视觉计算温区 %{index}
+  en: Computer vision zone %{index}
+
+monitor.dvpp.decoder:
+  zh-CN: "视频解码"
+  en: "Video decoding"
+
+monitor.dvpp.encoder:
+  zh-CN: "视频编码"
+  en: "Video encoding"
+
+monitor.dvpp.image:
+  zh-CN: "图像处理"
+  en: "Image processing"
+
+monitor.dvpp.rate_control:
+  zh-CN: "编码码率控制"
+  en: "Encoder rate control"
+
+monitor.dvpp.subtitle:
+  zh-CN: "编解码与图像处理 · 通道统计"
+  en: "Video codecs and image processing \u00b7 Channel statistics"
+
+monitor.dvpp.channel:
+  zh-CN: "通道 %{id}"
+  en: "Channel %{id}"
+
+monitor.dvpp.count:
+  zh-CN: "%{count} 路通道"
+  en: "%{count} channels"
+
+monitor.dvpp.idle:
+  zh-CN: "暂无通道"
+  en: "No channels"
+
+monitor.dvpp.more:
+  zh-CN: "显示全部通道"
+  en: "Show all channels"
+
+monitor.dvpp.fewer:
+  zh-CN: "收起更多通道"
+  en: "Show fewer channels"
+
+monitor.dvpp.note:
+  zh-CN: "帧率按驱动字段展示；配置帧率、通道帧率和任务耗时不代表硬件利用率。各节点依次读取，通道切换时可能短暂不一致。"
+  en: "Frame rates follow driver fields. Configured rates, channel rates and task timings do not indicate hardware utilization. Nodes are read sequentially and may briefly differ during channel changes."
+
+monitor.dvpp.field.codec:
+  zh-CN: "编码格式"
+  en: "Codec"
+
+monitor.dvpp.field.width:
+  zh-CN: "宽度"
+  en: "Width"
+
+monitor.dvpp.field.height:
+  zh-CN: "高度"
+  en: "Height"
+
+monitor.dvpp.field.state:
+  zh-CN: "驱动状态"
+  en: "Driver state"
+
+monitor.dvpp.field.stream_buffer:
+  zh-CN: "码流缓冲区 / B"
+  en: "Stream buffer / B"
+
+monitor.dvpp.field.frame_buffers:
+  zh-CN: "帧缓冲区数量"
+  en: "Frame buffers"
+
+monitor.dvpp.field.decode_fps:
+  zh-CN: "解码帧率（驱动）"
+  en: "Decode rate (driver)"
+
+monitor.dvpp.field.send_fps:
+  zh-CN: "发送帧率"
+  en: "Send rate"
+
+monitor.dvpp.field.queued_bytes:
+  zh-CN: "待处理数据 / B"
+  en: "Queued data / B"
+
+monitor.dvpp.field.protocol_errors:
+  zh-CN: "协议错误计数"
+  en: "Protocol errors"
+
+monitor.dvpp.field.stream_errors:
+  zh-CN: "码流错误计数"
+  en: "Stream errors"
+
+monitor.dvpp.field.size_errors:
+  zh-CN: "尺寸错误计数"
+  en: "Size errors"
+
+monitor.dvpp.field.submitted:
+  zh-CN: "提交计数"
+  en: "Submissions"
+
+monitor.dvpp.field.decoded:
+  zh-CN: "解码计数"
+  en: "Decode count"
+
+monitor.dvpp.field.retrieved:
+  zh-CN: "取帧 / 取流计数"
+  en: "Retrieve count"
+
+monitor.dvpp.field.released:
+  zh-CN: "释放计数"
+  en: "Release count"
+
+monitor.dvpp.field.discarded:
+  zh-CN: "丢弃计数"
+  en: "Discard count"
+
+monitor.dvpp.field.queued_frames:
+  zh-CN: "积压帧数"
+  en: "Queued frames"
+
+monitor.dvpp.field.busy_buffers:
+  zh-CN: "占用缓冲区数量"
+  en: "Busy buffers"
+
+monitor.dvpp.field.average_task_us:
+  zh-CN: "平均任务耗时"
+  en: "Average task time"
+
+monitor.dvpp.field.maximum_task_us:
+  zh-CN: "最大任务耗时"
+  en: "Maximum task time"
+
+monitor.dvpp.field.minimum_task_us:
+  zh-CN: "最小任务耗时"
+  en: "Minimum task time"
+
+monitor.dvpp.field.pid:
+  zh-CN: "进程 PID"
+  en: "Process PID"
+
+monitor.dvpp.field.user_channel:
+  zh-CN: "用户通道 ID"
+  en: "User channel ID"
+
+monitor.dvpp.field.vfid:
+  zh-CN: "虚拟功能 ID"
+  en: "Virtual function ID"
+
+monitor.dvpp.field.source_fps:
+  zh-CN: "配置输入帧率"
+  en: "Configured input rate"
+
+monitor.dvpp.field.target_fps:
+  zh-CN: "配置目标帧率"
+  en: "Configured target rate"
+
+monitor.dvpp.field.driver_fps:
+  zh-CN: "通道帧率（驱动）"
+  en: "Channel rate (driver)"
+
+monitor.dvpp.field.overloads:
+  zh-CN: "过载计数"
+  en: "Overload count"
+
+monitor.dvpp.field.ring_skips:
+  zh-CN: "环形缓冲跳帧计数"
+  en: "Ring skip count"
+
+monitor.dvpp.field.rc_skips:
+  zh-CN: "码率控制跳帧计数"
+  en: "Rate control skips"
+
+monitor.dvpp.field.encode_started:
+  zh-CN: "编码启动计数"
+  en: "Encodes started"
+
+monitor.dvpp.field.encode_succeeded:
+  zh-CN: "编码成功计数"
+  en: "Encodes completed"
+
+monitor.dvpp.field.lost:
+  zh-CN: "丢失计数"
+  en: "Lost count"
+
+monitor.dvpp.field.reencoded:
+  zh-CN: "重编码计数"
+  en: "Re-encode count"
+
+monitor.dvpp.field.gop:
+  zh-CN: "GOP"
+  en: "GOP"
+
+monitor.dvpp.field.rc_mode:
+  zh-CN: "码率控制模式"
+  en: "Rate control mode"
+
+monitor.dvpp.field.configured_kbps:
+  zh-CN: "配置码率"
+  en: "Configured bitrate"
+
+monitor.dvpp.field.instant_kbps:
+  zh-CN: "当前码率（驱动）"
+  en: "Current bitrate (driver)"
+
+monitor.dvpp.field.rc_fps:
+  zh-CN: "码率控制帧率统计"
+  en: "Rate control frame rate"
+
+monitor.dvpp.field.output_width:
+  zh-CN: "输出宽度"
+  en: "Output width"
+
+monitor.dvpp.field.output_height:
+  zh-CN: "输出高度"
+  en: "Output height"
+
+monitor.dvpp.field.function:
+  zh-CN: "处理类型"
+  en: "Operation type"
+
+monitor.dvpp.field.operations:
+  zh-CN: "操作计数"
+  en: "Operation count"
+
+monitor.dvpp.field.memory_bytes:
+  zh-CN: "通用内存 / B"
+  en: "General memory / B"
+
+monitor.dvpp.field.working_queue:
+  zh-CN: "工作队列长度"
+  en: "Working queue length"
+
+monitor.dvpp.field.event_queue:
+  zh-CN: "事件队列长度"
+  en: "Event queue length"
+
+monitor.dvpp.field.results:
+  zh-CN: "结果读取计数"
+  en: "Results retrieved"
+
+monitor.dvpp.field.interrupt_errors:
+  zh-CN: "错误中断计数"
+  en: "Error interrupts"
+
+monitor.dvpp.field.retries:
+  zh-CN: "重试计数"
+  en: "Retries"
+
+monitor.dvpp.group.identity:
+  zh-CN: 通道身份
+  en: Channel identity
+
+monitor.dvpp.group.configuration:
+  zh-CN: 配置参数
+  en: Configuration
+
+monitor.dvpp.group.throughput:
+  zh-CN: 吞吐与计数
+  en: Throughput and counters
+
+monitor.dvpp.group.queues:
+  zh-CN: 队列与缓冲区
+  en: Queues and buffers
+
+monitor.dvpp.group.errors:
+  zh-CN: 异常计数
+  en: Error counters
+
+monitor.dvpp.group.timings:
+  zh-CN: 任务耗时
+  en: Task timings
+
+monitor.jetson.runtime:
+  zh-CN: 运行状态
+  en: Runtime state
+
+monitor.jetson.awake:
+  zh-CN: 已唤醒
+  en: Awake
+
+monitor.jetson.suspended:
+  zh-CN: 已休眠
+  en: Suspended
+
+monitor.jetson.suspending:
+  zh-CN: 正在休眠
+  en: Suspending
+
+monitor.jetson.resuming:
+  zh-CN: 正在唤醒
+  en: Resuming
+
+monitor.jetson.load:
+  zh-CN: 硬件负载 · ACTMON
+  en: Hardware load · ACTMON
+
+monitor.jetson.awake_share:
+  zh-CN: 采样间隔唤醒占比
+  en: Awake share over interval
+
+monitor.jetson.governor:
+  zh-CN: 调频策略
+  en: Frequency governor
+
+monitor.jetson.active_time:
+  zh-CN: 累计唤醒时间
+  en: Cumulative active time
+
+monitor.jetson.suspended_time:
+  zh-CN: 累计休眠时间
+  en: Cumulative suspended time
+
+monitor.jetson.sleep_note:
+  zh-CN: 引擎已休眠，负载不沿用休眠前的读数
+  en: Engine suspended; previous activity is not shown as current load
+
+monitor.jetson.note:
+  zh-CN: ACTMON 是硬件活动的平滑统计；唤醒占比来自两次电源计数差值，不等于编解码负载。频率是驱动报告值，休眠时不代表引擎正在工作。
+  en: ACTMON reports smoothed hardware activity. Awake share comes from runtime PM counter deltas, not codec utilization. The driver-reported frequency does not imply activity while suspended.

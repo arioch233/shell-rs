@@ -1,0 +1,7 @@
+num of scheduler = 3
+scheduler[0]: rga3
+ load = 2%
+scheduler[1]: rga3
+ load = 0%
+scheduler[2]: rga2
+ load = 0%

@@ -29,7 +29,7 @@ impl Load {
 
 /// A card: its icon and title, with `meta` at the end of the title row.
 pub fn card(
-    id: &'static str,
+    id: impl Into<ElementId>,
     icon: impl Into<Icon>,
     title: impl Into<SharedString>,
     meta: Option<AnyElement>,
@@ -91,7 +91,7 @@ pub fn gauge(id: &'static str, percent: Option<f32>, cx: &App) -> impl IntoEleme
 
 /// A labelled bar: the label and the share above it.
 pub fn meter(
-    id: &'static str,
+    id: impl Into<SharedString>,
     label: SharedString,
     percent: Option<f32>,
     cx: &App,
@@ -99,18 +99,42 @@ pub fn meter(
     let color = percent.map_or(cx.theme().muted_foreground, |percent| {
         load_color(percent, cx)
     });
+    meter_with_color(id, label, percent, color, cx)
+}
+
+/// 使用调用方的指标语义颜色，例如加速器跑满不代表故障
+pub fn meter_with_color(
+    id: impl Into<SharedString>,
+    label: SharedString,
+    percent: Option<f32>,
+    color: Hsla,
+    cx: &App,
+) -> impl IntoElement {
+    let id = id.into();
+    let color = if percent.is_some() {
+        color
+    } else {
+        cx.theme().muted_foreground
+    };
     let text = percent.map_or("—".into(), format_percent);
     v_flex()
         .gap_1p5()
         .child(
-            h_flex().justify_between().text_sm().child(label).child(
-                numeric(text.clone(), cx)
-                    .id(id)
-                    .test_support()
-                    .aria_label(text)
-                    .text_color(color)
-                    .font_weight(FontWeight::SEMIBOLD),
-            ),
+            h_flex()
+                .min_w_0()
+                .gap_2()
+                .justify_between()
+                .text_sm()
+                .child(div().flex_1().min_w_0().child(label))
+                .child(
+                    numeric(text.clone(), cx)
+                        .flex_shrink_0()
+                        .id(id.clone())
+                        .test_support()
+                        .aria_label(text)
+                        .text_color(color)
+                        .font_weight(FontWeight::SEMIBOLD),
+                ),
         )
         .child(
             Progress::new(SharedString::from(format!("{id}-bar")))

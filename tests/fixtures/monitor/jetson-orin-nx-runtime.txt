@@ -1,0 +1,91 @@
+@@node /sys/class/devfreq/154c0000.nvenc/cur_freq ready
+793600000
+@@endnode
+@@node /sys/class/devfreq/154c0000.nvenc/governor ready
+tegra_wmark
+@@endnode
+@@node /sys/class/devfreq/154c0000.nvenc/device/power/runtime_status ready
+suspended
+@@endnode
+@@node /sys/class/devfreq/154c0000.nvenc/device/power/runtime_active_time ready
+0
+@@endnode
+@@node /sys/class/devfreq/154c0000.nvenc/device/power/runtime_suspended_time ready
+265318288
+@@endnode
+@@node /sys/class/devfreq/15480000.nvdec/cur_freq ready
+857600000
+@@endnode
+@@node /sys/class/devfreq/15480000.nvdec/governor ready
+tegra_wmark
+@@endnode
+@@node /sys/class/devfreq/15480000.nvdec/device/power/runtime_status ready
+suspended
+@@endnode
+@@node /sys/class/devfreq/15480000.nvdec/device/power/runtime_active_time ready
+0
+@@endnode
+@@node /sys/class/devfreq/15480000.nvdec/device/power/runtime_suspended_time ready
+265318311
+@@endnode
+@@node /sys/class/devfreq/15380000.nvjpg/cur_freq ready
+729600000
+@@endnode
+@@node /sys/class/devfreq/15380000.nvjpg/governor ready
+userspace
+@@endnode
+@@node /sys/class/devfreq/15380000.nvjpg/device/power/runtime_status ready
+suspended
+@@endnode
+@@node /sys/class/devfreq/15380000.nvjpg/device/power/runtime_active_time ready
+0
+@@endnode
+@@node /sys/class/devfreq/15380000.nvjpg/device/power/runtime_suspended_time ready
+265318281
+@@endnode
+@@node /sys/class/devfreq/15540000.nvjpg/cur_freq ready
+729600000
+@@endnode
+@@node /sys/class/devfreq/15540000.nvjpg/governor ready
+userspace
+@@endnode
+@@node /sys/class/devfreq/15540000.nvjpg/device/power/runtime_status ready
+suspended
+@@endnode
+@@node /sys/class/devfreq/15540000.nvjpg/device/power/runtime_active_time ready
+0
+@@endnode
+@@node /sys/class/devfreq/15540000.nvjpg/device/power/runtime_suspended_time ready
+265318264
+@@endnode
+@@node /sys/class/devfreq/15340000.vic/cur_freq ready
+729600000
+@@endnode
+@@node /sys/class/devfreq/15340000.vic/governor ready
+tegra_wmark
+@@endnode
+@@node /sys/class/devfreq/15340000.vic/device/power/runtime_status ready
+suspended
+@@endnode
+@@node /sys/class/devfreq/15340000.vic/device/power/runtime_active_time ready
+0
+@@endnode
+@@node /sys/class/devfreq/15340000.vic/device/power/runtime_suspended_time ready
+265318360
+@@endnode
+@@node /sys/class/devfreq/15a50000.ofa/cur_freq ready
+780800000
+@@endnode
+@@node /sys/class/devfreq/15a50000.ofa/governor ready
+tegra_wmark
+@@endnode
+@@node /sys/class/devfreq/15a50000.ofa/device/power/runtime_status ready
+suspended
+@@endnode
+@@node /sys/class/devfreq/15a50000.ofa/device/power/runtime_active_time ready
+0
+@@endnode
+@@node /sys/class/devfreq/15a50000.ofa/device/power/runtime_suspended_time ready
+265318243
+@@endnode
+@@complete

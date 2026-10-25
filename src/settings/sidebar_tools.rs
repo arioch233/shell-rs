@@ -51,6 +51,7 @@ pub(super) fn sidebar_tools_group(store: &Entity<SettingsStore>) -> SettingGroup
         let tools = reader.read(cx).settings().sidebar_tools;
         let (shown, hidden): (Vec<ToolKind>, Vec<ToolKind>) = ToolKind::ALL
             .into_iter()
+            .filter(|tool| *tool != ToolKind::Gpu)
             .partition(|tool| tools.shows(*tool));
         let restore = reader.clone();
         v_flex()

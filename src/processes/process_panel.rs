@@ -134,6 +134,26 @@ impl ProcessPanel {
         cx.notify();
     }
 
+    /// 统一监控提供快照时不创建第二个采样任务
+    pub(crate) fn set_observation(
+        &mut self,
+        target: Option<ExecTarget>,
+        snapshot: Option<Rc<Snapshot>>,
+        problem: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        self.sampling = None;
+        self.active = false;
+        self.target = target;
+        self.loading = snapshot.is_none() && problem.is_none();
+        if let Some(target) = &self.target {
+            let host = self.hosts.entry(target.terminal).or_default();
+            host.snapshot = snapshot;
+            host.problem = problem.map(Problem::Failed);
+        }
+        cx.notify();
+    }
+
     /// Read the host now, and every 15 seconds from now: 刷新.
     pub fn refresh(&mut self, cx: &mut Context<Self>) {
         self.restart(None, cx);

@@ -629,6 +629,37 @@ impl TerminalEngine {
         self.runtime.exec(command)
     }
 
+    /// 在当前连接上执行有界监控请求
+    pub fn exec_detailed(
+        &self,
+        command: String,
+        options: super::ExecOptions,
+    ) -> Option<super::ExecHandle> {
+        self.exec_detailed_with_input(command, options, None)
+    }
+
+    /// 有界执行可携带敏感标准输入
+    pub fn exec_detailed_with_input(
+        &self,
+        command: String,
+        options: super::ExecOptions,
+        input: Option<crate::connection::ConnectionSecret>,
+    ) -> Option<super::ExecHandle> {
+        if !matches!(self.lifecycle, TerminalLifecycle::Running) {
+            return None;
+        }
+        let (request, handle) = super::DetailedExecRequest::new(command, options);
+        let request = match input {
+            Some(input) => request.with_input(input),
+            None => request,
+        };
+        self.runtime
+            .commands
+            .send(TerminalTransportCommand::ExecDetailed(request))
+            .ok()?;
+        Some(handle)
+    }
+
     /// Take up an `exec --terminal` run (see [`super::TerminalRun`]): ^C to
     /// whatever has the terminal, the rest as the output comes. Refused
     /// while a full-screen program has the screen, which ^C does not end
