@@ -4,6 +4,30 @@
 
 One section per version, titled `## [version]`, optionally followed by a date. Each section is written in English here and in Chinese in [CHANGELOG.zh.md](CHANGELOG.zh.md), in the same change. The release workflow (`.github/workflows/release.yml`) takes the section with the tag’s version, as it is, for the GitHub release. The website’s changelog shows this file in English and Japanese and CHANGELOG.zh.md in Chinese (ShellRS’s update dialog opens it with What’s new). Written in Markdown, for users.
 
+## [0.1.17-beta.1]
+
+### Fixed
+
+- On Windows without the Visual C++ Redistributable, such as Windows 11 LTSC, ShellRS didn’t start: “VCRUNTIME140.dll was not found”.
+
+## [0.1.16]
+
+### Added
+
+- Cloud sync: sync your data between computers, end-to-end encrypted (E2EE): it’s encrypted before it leaves this computer, so remote storage holds only ciphertext, and only devices with the password can read it.
+- When the tabs don’t fit, scroll the tab bar sideways with the mouse wheel.
+
+### Fixed
+
+- In a terminal, Home and End didn’t move to the start and end of the line when zsh on the server was set up with oh-my-zsh and the like.
+
+## [0.1.16-beta.1]
+
+### Added
+
+- Cloud sync: sync your data between computers, end-to-end encrypted (E2EE): it’s encrypted before it leaves this computer, so remote storage holds only ciphertext, and only devices with the password can read it.
+- When the tabs don’t fit, scroll the tab bar sideways with the mouse wheel.
+
 ## [0.1.15]
 
 ### Added

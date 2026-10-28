@@ -68,7 +68,11 @@ use crate::sftp::{
     SystemLocalDirectoryProvider, TransferDirection,
 };
 use crate::shared::{commit_footer, confirm_danger, open_rename_tab_dialog};
-use crate::sync::{SyncEvent, SyncService, SyncServices};
+use crate::ssh::{
+    authentication_fields, authentication_instructions, authentication_title,
+    unknown_host_description,
+};
+use crate::sync::{SyncEvent, SyncService};
 use crate::terminal::{
     DEFAULT_FONT_SIZE, HostTerminalTransports, LocalPtyTransportProvider, LocalTerminalId,
     LocalTerminalPanel, LocalTerminalPanelEvent, RemoteTerminalId, SavedName, SearchDirection,
@@ -257,7 +261,7 @@ impl Workspace {
     ) -> Self {
         let connector = crate::ssh::SshConnector::new(
             crate::app::data_dir().join("known_hosts"),
-            store.read(cx).secrets(),
+            crate::secrets::KeychainSource::shared(store.read(cx).secrets()),
         );
         let remote = Arc::new(crate::ssh::SshTerminalTransportProvider::with_connector(
             connector.clone(),
@@ -313,8 +317,9 @@ impl Workspace {
             updater.set_services(UpdateServices::system(bundle), cx);
             updater.start(cx);
         });
-        this.sync
-            .update(cx, |sync, cx| sync.set_services(SyncServices::system(), cx));
+        this.sync.update(cx, |sync, cx| {
+            sync.set_services(crate::sync::system_services(), cx)
+        });
         if let Some(services) = AnalyticsServices::system() {
             let enabled = this.settings.read(cx).settings().analytics.enabled;
             this.set_analytics(Analytics::start(services, enabled), window, cx);
@@ -968,7 +973,7 @@ impl Workspace {
         };
         match prompt.kind().clone() {
             ConnectionPromptKind::UnknownHost(prompt) => {
-                let description = introduced(prompt.description());
+                let description = introduced(unknown_host_description(&prompt));
                 window.open_alert_dialog(cx, move |alert, _, _| {
                     alert
                         .title(t!("workspace.host_key.unknown_title"))
@@ -1057,9 +1062,9 @@ impl Workspace {
                 });
             }
             ConnectionPromptKind::Authentication(prompt) => {
-                let title = prompt.title().to_string();
-                let instructions = introduced(prompt.instructions().to_string());
-                let fields = prompt.fields().to_vec();
+                let title = authentication_title(&prompt);
+                let instructions = introduced(authentication_instructions(&prompt));
+                let fields = authentication_fields(&prompt);
                 let dialog_title: SharedString = if title.trim().is_empty() {
                     t!("workspace.auth.title")
                 } else {
@@ -2947,7 +2952,6 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_sync_now))
             .on_action(cx.listener(Self::on_review_sync))
             .on_action(cx.listener(Self::on_change_sync_password))
-            .on_action(cx.listener(Self::on_rotate_sync_key))
             .on_action(cx.listener(Self::on_turn_off_sync))
             .on_action(cx.listener(Self::on_remove_sync_device))
             .on_action(cx.listener(Self::on_copy_agent_skill))

@@ -455,13 +455,17 @@ impl Workspace {
     /// while hidden.
     fn host_tool(&self, host: HostId, cx: &App) -> Option<ToolKind> {
         match self.store.read(cx).host(host) {
-            Some(host) => host.sidebar_tool.map(|tool| {
-                if tool == ToolKind::Gpu {
-                    ToolKind::Monitor
-                } else {
-                    tool
-                }
-            }),
+            Some(host) => host
+                .sidebar_tool
+                .as_deref()
+                .and_then(ToolKind::from_key)
+                .map(|tool| {
+                    if tool == ToolKind::Gpu {
+                        ToolKind::Monitor
+                    } else {
+                        tool
+                    }
+                }),
             None => self.deleted_host_tools.get(&host).copied(),
         }
     }
@@ -470,8 +474,9 @@ impl Workspace {
     /// or here for one deleted while its terminals are open.
     fn remember_host_tool(&mut self, host: HostId, tool: Option<ToolKind>, cx: &mut Context<Self>) {
         if self.store.read(cx).host(host).is_some() {
-            self.store
-                .update(cx, |store, cx| store.set_host_sidebar_tool(host, tool, cx));
+            self.store.update(cx, |store, cx| {
+                store.set_host_sidebar_tool(host, tool.map(|tool| tool.key().into()), cx)
+            });
         } else if let Some(tool) = tool {
             self.deleted_host_tools.insert(host, tool);
         } else {
@@ -1023,7 +1028,7 @@ impl Workspace {
             && let Some(host) = self.store.read(cx).host(terminal.host)
         {
             let key = host.public_id.to_string();
-            let legacy = host.sidebar_tool == Some(ToolKind::Gpu);
+            let legacy = host.sidebar_tool.as_deref() == Some(ToolKind::Gpu.key());
             let mut preferences = self
                 .settings()
                 .read(cx)

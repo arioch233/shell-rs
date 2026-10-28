@@ -18,7 +18,7 @@ use crate::{
     sftp::{
         DownloadRequest, RemotePath, SftpCommand, SftpEvent, SftpRoute,
         SharedLocalDirectoryProvider, SharedSftpTransportProvider, TextFile, TransferDirection,
-        TransferPhase, TransferQuestion, UploadRequest,
+        TransferPhase, TransferQuestion, UploadRequest, describe_sftp_error,
     },
     shared::{ClosableTabTitle, HostMark, LatencyLabel, RenamableTab, close_tab_items},
 };
@@ -184,7 +184,8 @@ impl ExplorerPanel {
             .name("shellrs-sftp".into())
             .spawn(move || {
                 if let Err(error) = transport.run(receiver, sender.clone()) {
-                    let _ = sender.send_blocking(SftpEvent::Disconnected(error.to_string()));
+                    let _ =
+                        sender.send_blocking(SftpEvent::Disconnected(describe_sftp_error(&error)));
                 }
             })
         {
@@ -460,10 +461,11 @@ impl ExplorerPanel {
                     self.send(command);
                 }
                 Err(error) => {
+                    let message = describe_sftp_error(&error);
                     self.queue
-                        .abandon_head(Removal::NotStarted(error.to_string()));
+                        .abandon_head(Removal::NotStarted(message.clone()));
                     self.finish_file_promises();
-                    window.push_notification(Notification::error(error.to_string()), cx);
+                    window.push_notification(Notification::error(message), cx);
                 }
             }
         }
@@ -475,7 +477,7 @@ impl ExplorerPanel {
         }
         // Refused now rather than when its turn comes.
         if let Err(error) = transfer_command(&job) {
-            window.push_notification(Notification::error(error.to_string()), cx);
+            window.push_notification(Notification::error(describe_sftp_error(&error)), cx);
             return;
         }
         self.queue.push(job);
@@ -679,7 +681,7 @@ impl ExplorerPanel {
                     path,
                 }),
                 Err(e) => pane.update(cx, |pane, cx| {
-                    pane.apply_listing(id, Err(e.to_string()), window, cx)
+                    pane.apply_listing(id, Err(describe_sftp_error(&e)), window, cx)
                 }),
             }
         } else {
@@ -1303,23 +1305,8 @@ pub(super) fn transfer_command(job: &TransferJob) -> anyhow::Result<SftpCommand>
             .and_then(|paths| DownloadRequest::new(paths, target.into()))
             .map(SftpCommand::Download),
         TransferJob::DownloadToPath { source, target } => {
-            let target = std::path::Path::new(target);
-            let directory = target
-                .parent()
-                .ok_or_else(|| anyhow::anyhow!("Invalid download destination"))?;
-            let name = target
-                .file_name()
-                .and_then(|name| name.to_str())
-                .ok_or_else(|| anyhow::anyhow!("Invalid download filename"))?;
-            DownloadRequest::new(
-                vec![RemotePath::new(source.clone())?],
-                directory.to_path_buf(),
-            )
-            .map(|request| {
-                SftpCommand::Download(
-                    request.resolved(directory.to_path_buf(), Some(name.to_string())),
-                )
-            })
+            DownloadRequest::to_path(RemotePath::new(source.clone())?, target.into())
+                .map(SftpCommand::Download)
         }
     }
 }

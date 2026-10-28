@@ -347,7 +347,7 @@ async fn a_timed_out_driver_is_not_restarted_by_repeated_refresh(cx: &mut TestAp
 #[gpui_kit::test]
 fn legacy_gpu_selection_opens_hardware_and_new_writes_use_monitor(cx: &mut TestAppContext) {
     let mut store = HostStore::seed();
-    store.set_host_sidebar_tool_unnotified(HostId(WEB_01), Some(ToolKind::Gpu));
+    store.set_host_sidebar_tool_unnotified(HostId(WEB_01), Some(ToolKind::Gpu.key().into()));
     let (handle, workspace) = open_workspace_with_store(cx, store);
     in_frame(cx, handle, |window, cx| {
         window.click(("terminal-tab", INITIAL_WEB_TERMINAL), cx)
@@ -368,7 +368,7 @@ fn legacy_gpu_selection_opens_hardware_and_new_writes_use_monitor(cx: &mut TestA
                 .host(HostId(WEB_01))
                 .unwrap()
                 .sidebar_tool,
-            Some(ToolKind::Monitor)
+            Some(ToolKind::Monitor.key().into())
         );
     });
 }
