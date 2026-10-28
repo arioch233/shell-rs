@@ -95,7 +95,7 @@ impl ExplorerPanel {
             target: target.to_string(),
         };
         if let Err(error) = transfer_command(&job) {
-            request.finish(Err(error.to_string()));
+            request.finish(Err(crate::sftp::describe_sftp_error(&error)));
             return;
         }
         let id = self.queue.push(job);
@@ -184,7 +184,10 @@ mod tests {
         for (detail, succeeded) in [
             (TransferDetail::done("/tmp/a"), true),
             (TransferDetail::skipped("/tmp/a"), false),
-            (TransferDetail::failed("/tmp/a", "denied"), false),
+            (
+                TransferDetail::failed("/tmp/a", anyhow::anyhow!("denied")),
+                false,
+            ),
         ] {
             let mut queue = TransferQueue::default();
             queue.push(TransferJob::DownloadToPath {
