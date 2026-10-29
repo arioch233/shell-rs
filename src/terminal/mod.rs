@@ -1,5 +1,6 @@
 //! 终端: shared terminal emulation, transports and Dock panels.
 
+mod bookmark_dialog;
 mod box_drawing;
 mod broadcast;
 mod directory;
@@ -28,8 +29,10 @@ mod theme;
 mod transport;
 mod zmodem;
 
+pub(crate) use bookmark_dialog::open_terminal_bookmarks;
 pub(crate) use broadcast::BroadcastSelection;
 pub use directory::ReportedDirectory;
+pub(crate) use directory::directory_command;
 pub use directory_setup::{
     FollowCheck, FollowSetup, check_command as directory_check_command,
     install_command as directory_install_command, installed as directory_installed,

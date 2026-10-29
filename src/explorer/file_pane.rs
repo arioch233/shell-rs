@@ -14,7 +14,7 @@ use crate::{
         CatalogIcon, ExplorerAction, ExplorerCommand, ExplorerShortcut, LOCAL_FILE_LIST_CONTEXT,
         REMOTE_FILE_LIST_CONTEXT, ToggleDirectoryFollow, ToggleHiddenFiles,
     },
-    host::{BookmarkSide, ConnectionState, HostId, HostStore},
+    host::{Bookmark, BookmarkSide, ConnectionState, HostId, HostStore},
     i18n::{UiLocale, t, tn},
     sftp::{DirectoryListing, Place, SharedLocalDirectoryProvider},
 };
@@ -395,11 +395,10 @@ impl FilePane {
     pub fn focus_handle(&self, cx: &App) -> FocusHandle {
         self.table.read(cx).focus_handle(cx)
     }
-    pub fn bookmarks(&self, cx: &App) -> Vec<String> {
+    pub fn bookmarks(&self, cx: &App) -> Vec<Bookmark> {
         self.store
             .read(cx)
-            .bookmarks(self.host_id, self.side.bookmark_side())
-            .to_vec()
+            .bookmarks_with_aliases(self.host_id, self.side.bookmark_side())
     }
     pub fn back_target(&self) -> Option<String> {
         self.history.back_target().map(str::to_string)
@@ -892,6 +891,13 @@ impl FilePane {
                 }
                 _ => None,
             },
+            enters_terminal: self.is_remote() && self.compact,
+            selected_directory: match entries.as_slice() {
+                [entry] if entry.is_dir() && !entry.is_parent() => {
+                    Some(self.child_path_of(&entry.name))
+                }
+                _ => None,
+            },
             preview_kind: match entries.as_slice() {
                 [entry] if !entry.is_dir() && !entry.is_parent() => PreviewKind::of(&entry.name),
                 _ => None,
@@ -1035,6 +1041,17 @@ impl Render for FilePane {
                     .dropdown_menu(move |popup, _, _| bookmark_menu(popup, &menu))
             })
             .child(Separator::vertical())
+            .when(state.enters_terminal, |row| {
+                row.child(
+                    tool(
+                        "enter-terminal-directory",
+                        Icon::new(CatalogIcon::Terminal),
+                        t!("explorer.command.enter_terminal"),
+                        ExplorerCommand::EnterTerminalDirectory { path: None },
+                    )
+                    .disabled(!navigable),
+                )
+            })
             .child(
                 tool(
                     "up",

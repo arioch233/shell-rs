@@ -137,12 +137,14 @@ pub struct HostData {
     sync_state: Option<Vec<u8>>,
 }
 
-/// A bookmark's order among its pane's, and when it was last edited
-/// (added or moved).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// 书签在所属侧的顺序、可选别名，以及添加、排序或修改别名的时间
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct BookmarkMeta {
     pub sort_order: i64,
     pub edited_ms: u64,
+    /// 可选显示别名，空白归一为无别名
+    pub alias: Option<String>,
 }
 
 /// When an edit made now is dated: now, or just after `previous` should
@@ -166,6 +168,7 @@ pub enum Change {
     NewGroup,
     SaveGroup,
     AddBookmark,
+    BookmarkAlias,
     DeleteBookmark,
     BookmarkOrder,
     NewForward,
@@ -450,10 +453,11 @@ impl HostData {
         recent.truncate(MAX_RECENT);
         let mut bookmarks: HashMap<_, Vec<String>> = HashMap::new();
         let mut bookmark_meta = HashMap::new();
-        for (host, side, path, sort_order, edited_ms) in stored_bookmarks {
+        for (host, side, path, sort_order, edited_ms, alias) in stored_bookmarks {
             let meta = BookmarkMeta {
                 sort_order,
                 edited_ms,
+                alias: crate::bookmark::normalize_alias(alias.as_deref()),
             };
             bookmark_meta.insert((host, side, path.clone()), meta);
             bookmarks.entry((host, side)).or_default().push(path);
@@ -722,6 +726,7 @@ impl HostData {
         self.external.remove(&id);
         self.secrets.forget(id.0);
         self.bookmarks.retain(|(host, _), _| *host != id);
+        self.bookmark_meta.retain(|(host, _, _), _| *host != id);
         true
     }
 
@@ -1128,7 +1133,18 @@ impl HostData {
     }
 
     pub fn add_bookmark(&mut self, id: HostId, side: BookmarkSide, path: &str) -> bool {
-        if !self.add_bookmark_unnotified(id, side, path) {
+        self.add_bookmark_with_alias(id, side, path, None)
+    }
+
+    /// 同时保存路径与可选别名，已有路径不会被重复添加或覆盖
+    pub fn add_bookmark_with_alias(
+        &mut self,
+        id: HostId,
+        side: BookmarkSide,
+        path: &str,
+        alias: Option<&str>,
+    ) -> bool {
+        if !self.add_bookmark_with_alias_unnotified(id, side, path, alias) {
             return false;
         }
         // A link's host is not in the database: its bookmarks live as long
@@ -1136,7 +1152,14 @@ impl HostData {
         if !self.is_temporary(id) {
             let meta = self.bookmark_meta(id, side, path);
             self.persist(Change::AddBookmark, |db| {
-                db.insert_bookmark(id, side, path, meta.sort_order, meta.edited_ms)
+                db.insert_bookmark(
+                    id,
+                    side,
+                    path,
+                    meta.sort_order,
+                    meta.edited_ms,
+                    meta.alias.as_deref(),
+                )
             });
         }
         self.changed();
@@ -1144,6 +1167,16 @@ impl HostData {
     }
 
     pub fn add_bookmark_unnotified(&mut self, id: HostId, side: BookmarkSide, path: &str) -> bool {
+        self.add_bookmark_with_alias_unnotified(id, side, path, None)
+    }
+
+    pub fn add_bookmark_with_alias_unnotified(
+        &mut self,
+        id: HostId,
+        side: BookmarkSide,
+        path: &str,
+        alias: Option<&str>,
+    ) -> bool {
         if self.host(id).is_none() || path.is_empty() {
             return false;
         }
@@ -1161,6 +1194,7 @@ impl HostData {
         let meta = BookmarkMeta {
             sort_order,
             edited_ms: edited_after(0),
+            alias: crate::bookmark::normalize_alias(alias),
         };
         self.bookmark_meta
             .insert((id, side, path.to_string()), meta);
@@ -1172,8 +1206,62 @@ impl HostData {
     pub fn bookmark_meta(&self, id: HostId, side: BookmarkSide, path: &str) -> BookmarkMeta {
         self.bookmark_meta
             .get(&(id, side, path.to_string()))
-            .copied()
+            .cloned()
             .unwrap_or_default()
+    }
+
+    /// 按现有顺序提供路径和别名快照，供列表与菜单共用
+    pub fn bookmarks_with_aliases(&self, id: HostId, side: BookmarkSide) -> Vec<crate::Bookmark> {
+        self.bookmarks(id, side)
+            .iter()
+            .map(|path| {
+                let meta = self.bookmark_meta(id, side, path);
+                crate::Bookmark::new(path.clone()).with_alias(meta.alias.as_deref())
+            })
+            .collect()
+    }
+
+    /// 修改已有书签的别名，清空后恢复显示路径
+    pub fn set_bookmark_alias(
+        &mut self,
+        id: HostId,
+        side: BookmarkSide,
+        path: &str,
+        alias: Option<&str>,
+    ) -> bool {
+        if !self
+            .bookmarks(id, side)
+            .iter()
+            .any(|existing| existing == path)
+        {
+            return false;
+        }
+        let meta = self
+            .bookmark_meta
+            .entry((id, side, path.to_owned()))
+            .or_default();
+        let alias = crate::bookmark::normalize_alias(alias);
+        if meta.alias == alias {
+            return false;
+        }
+        meta.alias = alias;
+        meta.edited_ms = edited_after(meta.edited_ms);
+        let meta = meta.clone();
+        self.sync_revision += 1;
+        if !self.is_temporary(id) {
+            self.persist(Change::BookmarkAlias, |db| {
+                db.insert_bookmark(
+                    id,
+                    side,
+                    path,
+                    meta.sort_order,
+                    meta.edited_ms,
+                    meta.alias.as_deref(),
+                )
+            });
+        }
+        self.changed();
+        true
     }
 
     pub fn remove_bookmark(&mut self, id: HostId, side: BookmarkSide, path: &str) -> bool {
@@ -2435,6 +2523,87 @@ mod tests {
         store.remove_group_unnotified(group);
         assert!(store.bookmarks(web, BookmarkSide::Remote).is_empty());
         assert!(store.bookmarks(web, BookmarkSide::Local).is_empty());
+    }
+
+    #[test]
+    fn bookmark_aliases_persist_and_keep_path_identity() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("shellrs.db");
+        let mut store = HostData::load(HostDatabase::open(&path).unwrap()).unwrap();
+        let id = store.insert(draft("web", None));
+        assert!(store.add_bookmark_with_alias(
+            id,
+            BookmarkSide::Remote,
+            "/var/log",
+            Some("  日志  ")
+        ));
+        assert!(!store.add_bookmark_with_alias(id, BookmarkSide::Remote, "/var/log", Some("覆盖")));
+        assert!(store.add_bookmark_with_alias(id, BookmarkSide::Remote, "/tmp", Some("日志")));
+        assert!(store.add_bookmark_with_alias(
+            id,
+            BookmarkSide::Local,
+            "/var/log",
+            Some("本地日志")
+        ));
+        assert!(store.move_bookmark(id, BookmarkSide::Remote, "/tmp", 0));
+        assert_eq!(
+            store.bookmarks(id, BookmarkSide::Remote),
+            ["/tmp", "/var/log"]
+        );
+        assert_eq!(
+            store
+                .bookmark_meta(id, BookmarkSide::Remote, "/var/log")
+                .alias
+                .as_deref(),
+            Some("日志")
+        );
+        let previous = store
+            .bookmark_meta(id, BookmarkSide::Remote, "/var/log")
+            .edited_ms;
+        assert!(store.set_bookmark_alias(id, BookmarkSide::Remote, "/var/log", Some("系统日志")));
+        assert!(
+            store
+                .bookmark_meta(id, BookmarkSide::Remote, "/var/log")
+                .edited_ms
+                > previous
+        );
+        let revision = store.sync_revision;
+        assert!(!store.set_bookmark_alias(
+            id,
+            BookmarkSide::Remote,
+            "/var/log",
+            Some(" 系统日志 ")
+        ));
+        assert!(!store.set_bookmark_alias(id, BookmarkSide::Remote, "/missing", Some("不存在")));
+        assert_eq!(store.sync_revision, revision);
+        drop(store);
+
+        let mut store = HostData::load(HostDatabase::open(&path).unwrap()).unwrap();
+        assert_eq!(
+            store.bookmarks_with_aliases(id, BookmarkSide::Remote)[1].label(),
+            "系统日志"
+        );
+        assert_eq!(
+            store
+                .bookmark_meta(id, BookmarkSide::Local, "/var/log")
+                .alias
+                .as_deref(),
+            Some("本地日志")
+        );
+        assert!(store.set_bookmark_alias(id, BookmarkSide::Remote, "/var/log", Some(" \t ")));
+        drop(store);
+
+        let mut store = HostData::load(HostDatabase::open(&path).unwrap()).unwrap();
+        assert_eq!(
+            store.bookmarks_with_aliases(id, BookmarkSide::Remote)[1].label(),
+            "/var/log"
+        );
+        assert!(store.remove_bookmark(id, BookmarkSide::Remote, "/tmp"));
+        assert!(store.add_bookmark(id, BookmarkSide::Remote, "/tmp"));
+        assert_eq!(
+            store.bookmark_meta(id, BookmarkSide::Remote, "/tmp").alias,
+            None
+        );
     }
 
     #[test]

@@ -1728,6 +1728,22 @@ impl Workspace {
         {
             return;
         }
+        if let ExplorerCommand::EnterTerminalDirectory { path } = action.command() {
+            if let Some(terminal) = self.sidebar_terminal(action.explorer())
+                && let Some(target) = self.terminals.get(&terminal)
+            {
+                let generation = target.read(cx).terminal().read(cx).generation(cx);
+                let path = path
+                    .clone()
+                    .unwrap_or_else(|| panel.read(cx).pane(true).read(cx).path());
+                self.on_enter_terminal_directory(
+                    &crate::app::EnterTerminalDirectory::new(terminal, generation, path),
+                    window,
+                    cx,
+                );
+            }
+            return;
+        }
         if matches!(action.command(), ExplorerCommand::CancelTransfer) {
             self.cancel_prompts_for_owner(
                 PromptOwner::Sftp(action.explorer(), panel.read(cx).generation()),
@@ -3009,6 +3025,9 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_control_service))
             .on_action(cx.listener(Self::on_refresh_history))
             .on_action(cx.listener(Self::on_enter_command))
+            .on_action(cx.listener(Self::on_open_terminal_bookmarks))
+            .on_action(cx.listener(Self::on_show_terminal_bookmarks))
+            .on_action(cx.listener(Self::on_enter_terminal_directory))
             .on_action(cx.listener(Self::on_copy_command))
             .on_action(cx.listener(Self::on_new_terminal_group))
             .on_action(cx.listener(Self::on_rename_terminal_group))

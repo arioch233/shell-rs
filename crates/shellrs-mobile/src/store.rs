@@ -998,6 +998,7 @@ impl From<Change> for ChangeKind {
             Change::DeleteCredential => Self::DeleteCredential,
             Change::Recent => Self::Recent,
             Change::AddBookmark
+            | Change::BookmarkAlias
             | Change::DeleteBookmark
             | Change::BookmarkOrder
             | Change::NewForward

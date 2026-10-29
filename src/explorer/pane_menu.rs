@@ -6,7 +6,9 @@ use super::{ExplorerId, FileSizeFormat, NewEntryKind, PaneSide, PreviewKind};
 use crate::app::{
     CatalogIcon, ExplorerAction, ExplorerCommand, SetFileSizeFormat, ToggleHiddenFiles,
 };
+use crate::host::Bookmark;
 use crate::i18n::t;
+use crate::shared::BookmarkLabel;
 use gpui_kit::component::{Icon, IconName, menu::PopupMenu};
 use gpui_kit::*;
 
@@ -20,6 +22,8 @@ pub(super) struct PaneMenuState {
     /// The single selected row is a file the editor can try to open: its
     /// full path.
     pub edits_file: Option<String>,
+    pub enters_terminal: bool,
+    pub selected_directory: Option<String>,
     /// How that file can be previewed, if it can.
     pub preview_kind: Option<PreviewKind>,
     pub can_go_up: bool,
@@ -27,7 +31,7 @@ pub(super) struct PaneMenuState {
     pub can_go_back: bool,
     pub can_go_forward: bool,
     pub path: String,
-    pub bookmarks: Vec<String>,
+    pub bookmarks: Vec<Bookmark>,
     /// Commands that change files can run now.
     pub can_modify: bool,
     /// A transfer can start now.
@@ -47,6 +51,20 @@ impl PaneMenuState {
 
 /// Right-click on a row: commands for the selection.
 pub(super) fn item_menu(menu: PopupMenu, state: &PaneMenuState) -> PopupMenu {
+    let menu = if state.enters_terminal
+        && let Some(path) = &state.selected_directory
+    {
+        menu.menu_with_icon(
+            t!("explorer.command.enter_terminal"),
+            Icon::new(CatalogIcon::Terminal),
+            state.action(ExplorerCommand::EnterTerminalDirectory {
+                path: Some(path.clone()),
+            }),
+        )
+        .separator()
+    } else {
+        menu
+    };
     let remote = state.remote;
     let none = state.targets.is_empty() || !state.can_modify;
     // A directory has no 打开: a double-click goes in.
@@ -141,7 +159,7 @@ pub(super) fn directory_menu(
             state.action(ExplorerCommand::FindFiles),
         );
     }
-    let menu = menu.separator();
+    let menu = terminal_directory_item(menu, state).separator();
     add_bookmark_item(menu, state).separator().submenu(
         t!("explorer.command.new"),
         window,
@@ -158,7 +176,8 @@ pub(super) fn path_menu(
     cx: &mut Context<PopupMenu>,
 ) -> PopupMenu {
     let remote = state.remote;
-    add_bookmark_item(refresh_items(menu, state, window, cx).separator(), state)
+    let menu = terminal_directory_item(refresh_items(menu, state, window, cx).separator(), state);
+    add_bookmark_item(menu, state)
         .menu_with_icon(
             t!("explorer.command.copy_path"),
             Icon::new(IconName::Copy),
@@ -170,6 +189,19 @@ pub(super) fn path_menu(
             Icon::new(IconName::FolderOpen),
             state.action(ExplorerCommand::OpenDirectory { remote }),
         )
+}
+
+fn terminal_directory_item(menu: PopupMenu, state: &PaneMenuState) -> PopupMenu {
+    if state.enters_terminal {
+        menu.menu_with_icon_and_disabled(
+            t!("explorer.command.enter_terminal"),
+            Icon::new(CatalogIcon::Terminal),
+            state.action(ExplorerCommand::EnterTerminalDirectory { path: None }),
+            state.path.is_empty(),
+        )
+    } else {
+        menu
+    }
 }
 
 /// 前往 ▸ and 刷新.
@@ -228,8 +260,12 @@ fn add_bookmark_item(menu: PopupMenu, state: &PaneMenuState) -> PopupMenu {
         state.action(ExplorerCommand::AddBookmark {
             remote: state.remote,
             path: None,
+            alias: None,
         }),
-        state.bookmarks.contains(&state.path),
+        state
+            .bookmarks
+            .iter()
+            .any(|bookmark| bookmark.path() == state.path),
     )
 }
 
@@ -278,19 +314,29 @@ pub(super) fn bookmark_menu(menu: PopupMenu, state: &PaneMenuState) -> PopupMenu
     let menu = if state.bookmarks.is_empty() {
         menu.label(t!("explorer.bookmarks.none"))
     } else {
-        state.bookmarks.iter().fold(menu, |menu, path| {
-            menu.menu_with_check(
-                path.clone(),
-                *path == state.path,
+        state.bookmarks.iter().fold(menu, |menu, bookmark| {
+            let shown = bookmark.clone();
+            menu.menu_element_with_check(
+                bookmark.path() == state.path,
                 state.action(ExplorerCommand::Navigate {
                     remote,
-                    path: path.clone(),
+                    path: bookmark.path().to_owned(),
                 }),
+                move |_, _| {
+                    div()
+                        .w(rems(20.))
+                        .min_w_0()
+                        .child(BookmarkLabel::new(shown.clone()))
+                },
             )
         })
     };
     let menu = menu.separator();
-    if state.bookmarks.contains(&state.path) {
+    if state
+        .bookmarks
+        .iter()
+        .any(|bookmark| bookmark.path() == state.path)
+    {
         menu.menu(
             t!("explorer.command.remove_bookmark"),
             state.action(ExplorerCommand::RemoveBookmark {
@@ -301,7 +347,11 @@ pub(super) fn bookmark_menu(menu: PopupMenu, state: &PaneMenuState) -> PopupMenu
     } else {
         menu.menu_with_disabled(
             t!("explorer.command.add_bookmark"),
-            state.action(ExplorerCommand::AddBookmark { remote, path: None }),
+            state.action(ExplorerCommand::AddBookmark {
+                remote,
+                path: None,
+                alias: None,
+            }),
             state.path.is_empty(),
         )
     }

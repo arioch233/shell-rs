@@ -221,6 +221,7 @@ impl Sim {
                     host: on.clone(),
                     path: path.clone(),
                     sort_order: 0,
+                    alias: None,
                 });
                 self.create(
                     d,

@@ -4,8 +4,6 @@
 
 <h1 align="center">ShellRS</h1>
 
-> **定制 Fork · 2026-10-25**：本仓库由 [arioch233](https://github.com/arioch233/shell-rs) 维护，基于 [since2006/shell-rs](https://github.com/since2006/shell-rs)，保留原作者版权及 GPLv3 许可证。主要修改为统一资源监控（Rockchip、Jetson、Ascend）、按设备展示硬件信息、授权采集及 SFTP 系统拖出下载。本 Fork 当前仅提供源码构建，原作者安装包不包含这些定制。开发与上游同步见 [Fork 维护指南](docs/fork-maintenance.zh.md)。
-
 <p align="center">
   用 Rust 编写、由 GPU 渲染界面的高性能原生跨平台 SSH 客户端：Xshell 式的主机管理、WinSCP 式 SFTP 和端口转发，都在一个窗口里。
 </p>
@@ -20,6 +18,12 @@
 </p>
 
 <p align="center"><a href="README.md">English</a> | <b>简体中文</b></p>
+
+> **定制 Fork · 更新于 2026-10-30**
+>
+> 本仓库由 [arioch233](https://github.com/arioch233/shell-rs) 维护，基于 [since2006/shell-rs](https://github.com/since2006/shell-rs)，保留原作者版权声明与 [GPLv3 许可证](LICENSE)。新增 Rockchip、Jetson、Ascend 统一资源监控、受限只读授权、macOS 文件拖出下载，以及书签别名与终端目录联动。功能详情及平台支持见[定制功能说明](docs/fork-features.zh.md)
+>
+> 本 Fork 当前仅提供源码构建，原作者安装包不包含这些定制。构建方式见[从源码构建](#从源码构建)，分支管理与上游同步见 [Fork 维护指南](docs/fork-maintenance.zh.md)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/main-dark.png">
@@ -54,14 +58,14 @@ ShellRS 把 Xshell 式的主机管理和多标签终端、WinSCP 式的双栏 SF
 **右侧栏工具**
 
 - 跟着当前的远程终端，在这条终端自己的连接上读取和执行，不另外登录；⌘⌥B（其他平台 Ctrl+Alt+B）显示或隐藏。
-- 系统监控：系统信息、CPU（含每个核）、内存、网卡速率和磁盘占用，每 2 秒刷新。
-- 网络连接、进程管理和系统服务：搜索和筛选，查看进程详情、结束进程，启动、停止、重启 systemd 服务，开关开机启动，查看日志。这三项和系统监控只支持 Linux。
+- 资源监控：通过「概览」「硬件」「进程」整合系统指标与 GPU/NPU、媒体引擎信息，按实际探测到的能力显示硬件卡片，详见[定制功能说明](docs/fork-features.zh.md)
+- 网络连接、进程管理和系统服务：搜索和筛选，查看进程详情、结束进程，启动、停止、重启 systemd 服务，开关开机启动，查看日志。这三项和资源监控只支持 Linux
 - Docker：按 compose 项目列出容器，启停、重启、看详情和日志，管理卷、镜像和网络。不是 root 时用免密码的 sudo（系统服务也是）。
 - Kubernetes：选择主机 kubeconfig 中的集群，读取所有命名空间并过滤 Pod、Deployment、StatefulSet、Service 等资源；查看详情与关联 Pod、检索容器日志、生成日志和进入容器等命令。默认不显示，在设置里打开。详见[使用说明](docs/kubernetes.md)。
 - 历史命令读主机上的 `~/.bash_history`，命令片段所有主机共用、可以分类；点一下输入到终端，或直接执行。
 - tmux：主机上的 tmux 会话，标出终端所在的那个；新建、连接、退出当前、重命名和结束会话。
 - 文件：终端旁的单栏远程文件列表，在终端自己的连接上开 SFTP 通道，跟随终端的当前目录。浏览、编辑和预览，拖入文件上传，下载到「下载」文件夹。
-- GPU/NPU：AI 主机的 NVIDIA GPU 和华为昇腾 NPU，按 8 卡设计：汇总、每卡的利用率、显存、温度、功耗和健康状态，以及计算进程（可以结束）。默认不显示，在设置里打开，其余工具也可以在那里隐藏。
+- GPU/NPU 已并入资源监控：按设备展示可获取的利用率、内存、温度、功耗和健康状态，计算进程位于「进程」页。资源监控默认显示，可在设置中隐藏
 
 **SFTP**
 
@@ -124,7 +128,7 @@ ShellRS 把 Xshell 式的主机管理和多标签终端、WinSCP 式的双栏 SF
 
 ## 下载
 
-> 以下下载、签名与自动更新说明仅适用于原作者版本；本 Fork 请按下文从源码构建。
+> 以下下载、签名与自动更新说明适用于原作者版本。如需使用本 Fork 的定制功能，请[从源码构建](#从源码构建)
 
 到官网 [shellrs.com/download](https://shellrs.com/download) 下载，页面会按你的系统给出对应的安装包；也可以到 GitHub [Releases](https://github.com/since2006/shell-rs/releases) 下载。Beta 版在 Releases 里标为 Pre-release，想提前用上新功能，可以在「设置 › 关于」里把更新渠道切到 Beta。
 
@@ -176,6 +180,8 @@ cargo run
 
 ## 文档
 
+- [定制功能说明](docs/fork-features.zh.md)：相对上游的新增功能、设备支持与当前限制
+- [Fork 维护指南](docs/fork-maintenance.zh.md)：分支管理、上游合并与源码构建
 - [使用手册](docs/manual.zh.md)：每个功能的详细说明和快捷键
 - [开发与测试](docs/development.md)：构建、测试和数据目录
 - [发布流程](docs/release.md)：打包、签名和在线更新的发布步骤

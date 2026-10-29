@@ -1,5 +1,6 @@
 //! Small presentation pieces shared by more than one feature.
 
+mod bookmark_label;
 mod closable_tab;
 mod command_line;
 mod detail_row;
@@ -15,6 +16,7 @@ mod segmented_control;
 mod tab_menu;
 mod tint;
 
+pub use bookmark_label::BookmarkLabel;
 pub use closable_tab::ClosableTabTitle;
 pub use command_line::{command_tooltip, one_line};
 pub use detail_row::{compact_detail_row, detail_row, stacked_detail_row};

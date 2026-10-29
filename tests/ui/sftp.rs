@@ -636,6 +636,7 @@ async fn sftp_toolbar_goes_up_root_home_back_and_forward(cx: &mut TestAppContext
                 ExplorerCommand::AddBookmark {
                     remote: true,
                     path: None,
+                    alias: None,
                 },
             )),
             cx,
@@ -1005,6 +1006,169 @@ async fn sftp_bookmark_dialog_adds_orders_removes_and_opens(cx: &mut TestAppCont
         window.find("local-path").value() == Some("/picked")
     })
     .await;
+}
+
+#[gpui_kit::test]
+async fn sftp_bookmark_alias_can_be_added_edited_cleared_and_opened(cx: &mut TestAppContext) {
+    use shellrs::host::BookmarkSide;
+    let provider = Arc::new(FakeSftpProvider::default());
+    let (handle, workspace) = open_workspace_with_sftp(cx, provider);
+    open_test_explorer(cx, handle).await;
+    let alias = |cx: &mut TestAppContext, path: &str| {
+        cx.update(|cx| {
+            workspace
+                .read(cx)
+                .store()
+                .read(cx)
+                .bookmark_meta(HostId(DB_01), BookmarkSide::Remote, path)
+                .alias
+        })
+    };
+
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.render_frame(cx);
+        window
+            .within(("remote-pane", SFTP_TAB))
+            .click("bookmarks", cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.render_frame(cx);
+        window.click("bookmark-alias", cx);
+        window.input("  项目目录  ", cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.render_frame(cx);
+        window.click("bookmark-add", cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    assert_eq!(alias(cx, "/home/tester").as_deref(), Some("项目目录"));
+
+    // 路径切换重置别名草稿，同名书签仍按路径分别保存
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.render_frame(cx);
+        assert_eq!(
+            window.find("bookmark:/home/tester").label(),
+            Some("项目目录 — /home/tester")
+        );
+        assert!(!enabled(&window.find("bookmark-save-alias")));
+        window.click("open-directory-path", cx);
+        window.press("secondary-a", cx);
+        window.input("/etc", cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.render_frame(cx);
+        assert_eq!(window.find("bookmark-alias").value(), Some(""));
+        window.click("bookmark-alias", cx);
+        window.input("项目目录", cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.render_frame(cx);
+        window.click("bookmark-add", cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    assert_eq!(alias(cx, "/etc").as_deref(), Some("项目目录"));
+
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.render_frame(cx);
+        window.click("bookmark:/home/tester", cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.render_frame(cx);
+        assert_eq!(window.find("bookmark-alias").value(), Some("项目目录"));
+        window.click("bookmark-alias", cx);
+        window.press("secondary-a", cx);
+        window.input("工作区", cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    assert_eq!(alias(cx, "/home/tester").as_deref(), Some("项目目录"));
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.render_frame(cx);
+        assert!(enabled(&window.find("bookmark-save-alias")));
+        window.click("bookmark-save-alias", cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    assert_eq!(alias(cx, "/home/tester").as_deref(), Some("工作区"));
+
+    // 清空别名恢复路径显示，不改动另一个同名书签
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.render_frame(cx);
+        assert_eq!(
+            window.find("bookmark:/home/tester").label(),
+            Some("工作区 — /home/tester")
+        );
+        window.click("bookmark-alias", cx);
+        window.press("secondary-a", cx);
+        window.press("backspace", cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.render_frame(cx);
+        window.click("bookmark-save-alias", cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    assert_eq!(alias(cx, "/home/tester"), None);
+    assert_eq!(alias(cx, "/etc").as_deref(), Some("项目目录"));
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.render_frame(cx);
+        assert_eq!(
+            window.find("bookmark:/home/tester").label(),
+            Some("/home/tester")
+        );
+        window.double_click("bookmark:/etc", cx);
+    })
+    .unwrap();
+    cx.wait_for(handle.into(), Duration::from_secs(2), |window, cx| {
+        window.render_frame(cx);
+        window.find("remote-path").value() == Some("/etc")
+    })
+    .await;
+
+    // 重新打开可读取已保存别名，取消时不保存草稿
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.render_frame(cx);
+        window
+            .within(("remote-pane", SFTP_TAB))
+            .click("bookmarks", cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.render_frame(cx);
+        assert_eq!(window.find("bookmark-alias").value(), Some("项目目录"));
+        window.click("bookmark-alias", cx);
+        window.press("secondary-a", cx);
+        window.input("未保存", cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.render_frame(cx);
+        window.press("escape", cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    assert_eq!(alias(cx, "/etc").as_deref(), Some("项目目录"));
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.render_frame(cx);
+        assert!(window.try_find("open-directory-path").is_none());
+    })
+    .unwrap();
 }
 
 #[gpui_kit::test]
