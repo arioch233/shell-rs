@@ -41,7 +41,8 @@ fn from_sql(id: i64) -> u64 {
 /// command snippets, 15 the serial hosts, 16 the Telnet hosts, 17 each
 /// host's right sidebar, 18 the saved local terminals, 19 their titles, 20
 /// what sync needs.
-const SCHEMA_VERSION: i64 = 20;
+/// 21 增加可选的书签别名，保留路径身份和现有顺序
+const SCHEMA_VERSION: i64 = 21;
 
 /// The whole schema, as a new database gets it.
 ///
@@ -193,6 +194,7 @@ CREATE TABLE bookmarks (
     path       TEXT NOT NULL,
     sort_order INTEGER NOT NULL,
     edited_ms  INTEGER NOT NULL DEFAULT 0,
+    alias      TEXT,
     PRIMARY KEY (host_id, side, path)
 ) STRICT, WITHOUT ROWID;
 CREATE TABLE forwards (
@@ -290,7 +292,7 @@ enum Step {
 ///
 /// A step is history: it says what that version's change was, and stays as
 /// written when `SCHEMA` changes again.
-const STEPS: [(i64, Step); 7] = [
+const STEPS: [(i64, Step); 8] = [
     (
     13,
     // The command snippets.
@@ -391,6 +393,8 @@ COMMIT;",
     ),
     // What sync needs.
     (19, Step::Code(add_sync)),
+    // 书签别名不改变原有路径、顺序和同步身份
+    (20, Step::Sql("BEGIN; ALTER TABLE bookmarks ADD COLUMN alias TEXT; PRAGMA user_version = 21; COMMIT;")),
 ];
 
 /// Version 16, the Telnet hosts: `protocol` takes `telnet`, and the two
@@ -595,9 +599,8 @@ pub struct StoredData {
     pub hosts: Vec<Host>,
     /// Hosts that have ever connected, most recently connected first.
     pub recent: Vec<HostId>,
-    /// SFTP bookmarks in their order, each with its `sort_order` and when
-    /// it was last edited.
-    pub bookmarks: Vec<(HostId, BookmarkSide, String, i64, u64)>,
+    /// 按顺序读取的 SFTP 书签，包含路径、排序值、编辑时间与可选别名
+    pub bookmarks: Vec<(HostId, BookmarkSide, String, i64, u64, Option<String>)>,
     /// Port-forwarding rules in the order the forward list shows them.
     pub forwards: Vec<ForwardRule>,
     /// Credentials in the order the credential list shows them.
@@ -856,7 +859,7 @@ impl HostDatabase {
         let bookmarks = self
             .connection
             .prepare(
-                "SELECT host_id, side, path, sort_order, edited_ms FROM bookmarks \
+                "SELECT host_id, side, path, sort_order, edited_ms, alias FROM bookmarks \
                  ORDER BY sort_order, host_id, side, path",
             )?
             .query_map([], |row| {
@@ -868,11 +871,12 @@ impl HostDatabase {
                     row.get::<_, String>(2)?,
                     row.get::<_, i64>(3)?,
                     from_sql(row.get(4)?),
+                    row.get::<_, Option<String>>(5)?,
                 ))
             })?
             .filter_map(|row| match row {
-                Ok((host, Some(side), path, order, edited)) => {
-                    Some(Ok((host, side, path, order, edited)))
+                Ok((host, Some(side), path, order, edited, alias)) => {
+                    Some(Ok((host, side, path, order, edited, alias)))
                 }
                 Ok((_, None, ..)) => None,
                 Err(error) => Some(Err(error)),
@@ -1366,18 +1370,20 @@ impl HostDatabase {
         path: &str,
         sort_order: i64,
         edited_ms: u64,
+        alias: Option<&str>,
     ) -> rusqlite::Result<()> {
         self.connection.execute(
-            "INSERT INTO bookmarks (host_id, side, path, sort_order, edited_ms) \
-             VALUES (?1, ?2, ?3, ?4, ?5) \
+            "INSERT INTO bookmarks (host_id, side, path, sort_order, edited_ms, alias) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
              ON CONFLICT (host_id, side, path) \
-             DO UPDATE SET sort_order = excluded.sort_order, edited_ms = excluded.edited_ms",
+             DO UPDATE SET sort_order = excluded.sort_order, edited_ms = excluded.edited_ms, alias = excluded.alias",
             params![
                 to_sql(host.0),
                 side.as_str(),
                 path,
                 sort_order,
-                to_sql(edited_ms)
+                to_sql(edited_ms),
+                alias
             ],
         )?;
         Ok(())
@@ -2061,6 +2067,43 @@ mod tests {
         assert!(data.hosts.is_empty());
         assert!(data.recent.is_empty());
         assert!(data.forwards.is_empty());
+    }
+
+    #[test]
+    fn version_20_bookmarks_migrate_without_changing_paths_or_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("shellrs.db");
+        let db = HostDatabase::open(&path).unwrap();
+        db.insert_host(&host(1, "web", None)).unwrap();
+        db.insert_bookmark(HostId(1), BookmarkSide::Remote, "/var/log", 7, 42, None)
+            .unwrap();
+        db.connection
+            .execute_batch("ALTER TABLE bookmarks DROP COLUMN alias; PRAGMA user_version = 20;")
+            .unwrap();
+        drop(db);
+
+        let db = HostDatabase::open(&path).unwrap();
+        assert_eq!(
+            db.load().unwrap().bookmarks,
+            vec![(
+                HostId(1),
+                BookmarkSide::Remote,
+                "/var/log".into(),
+                7,
+                42,
+                None
+            )]
+        );
+        db.insert_bookmark(
+            HostId(1),
+            BookmarkSide::Remote,
+            "/var/log",
+            7,
+            43,
+            Some("日志"),
+        )
+        .unwrap();
+        assert_eq!(db.load().unwrap().bookmarks[0].5.as_deref(), Some("日志"));
     }
 
     #[test]
@@ -3735,16 +3778,16 @@ INSERT INTO snippets (id, category_id, name, command) VALUES (1, 1, 'ps', 'docke
         };
         db.insert_host(&host(1, "web", None)).unwrap();
         db.insert_host(&host(2, "db", None)).unwrap();
-        db.insert_bookmark(HostId(1), BookmarkSide::Remote, "/var/log", 1, 7)
+        db.insert_bookmark(HostId(1), BookmarkSide::Remote, "/var/log", 1, 7, None)
             .unwrap();
-        db.insert_bookmark(HostId(1), BookmarkSide::Local, "/Users/me", 2, 7)
+        db.insert_bookmark(HostId(1), BookmarkSide::Local, "/Users/me", 2, 7, None)
             .unwrap();
-        db.insert_bookmark(HostId(1), BookmarkSide::Remote, "/etc", 3, 7)
+        db.insert_bookmark(HostId(1), BookmarkSide::Remote, "/etc", 3, 7, None)
             .unwrap();
         // The same path twice is one bookmark.
-        db.insert_bookmark(HostId(1), BookmarkSide::Remote, "/var/log", 1, 7)
+        db.insert_bookmark(HostId(1), BookmarkSide::Remote, "/var/log", 1, 7, None)
             .unwrap();
-        db.insert_bookmark(HostId(2), BookmarkSide::Remote, "/srv", 5, 7)
+        db.insert_bookmark(HostId(2), BookmarkSide::Remote, "/srv", 5, 7, None)
             .unwrap();
         assert_eq!(
             paths(&db),
@@ -3763,7 +3806,7 @@ INSERT INTO snippets (id, category_id, name, command) VALUES (1, 1, 'ps', 'docke
             &[("/etc".into(), 0, 8), ("/var/log".into(), 1, 8)],
         )
         .unwrap();
-        db.insert_bookmark(HostId(1), BookmarkSide::Remote, "/opt", 6, 7)
+        db.insert_bookmark(HostId(1), BookmarkSide::Remote, "/opt", 6, 7, None)
             .unwrap();
         let remote: Vec<_> = db
             .load()

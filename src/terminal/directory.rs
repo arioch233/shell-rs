@@ -5,6 +5,12 @@
 
 use percent_encoding::percent_decode_str;
 
+/// 单行目录命令，仅接受绝对路径，拒绝能触发终端按键的控制字符
+pub(crate) fn directory_command(path: &str) -> Option<String> {
+    (path.starts_with('/') && !path.chars().any(char::is_control))
+        .then(|| format!("cd -- {}", super::local_shell::quote_posix_word(path)))
+}
+
 /// A folder the terminal's output reported: where its shell is, if the
 /// report came from this host and not from one ssh'd to inside it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -69,6 +75,51 @@ pub(super) fn reported_directory(params: &[&[u8]]) -> Option<ReportedDirectory> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn directory_commands_refuse_terminal_controls_and_relative_paths() {
+        for path in [
+            "",
+            "../project",
+            "~/work",
+            "/a\nb",
+            "/a\rb",
+            "/a\x1b[31m",
+            "/a\0b",
+            "/a\tb",
+        ] {
+            assert_eq!(directory_command(path), None, "{path:?}");
+        }
+        assert_eq!(
+            directory_command("/var/log").as_deref(),
+            Some("cd -- /var/log")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn directory_commands_enter_paths_literally_without_evaluating_shell_syntax() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("中文 a'b $(touch injected); `echo hi` \\");
+        std::fs::create_dir(&path).unwrap();
+        let command = directory_command(path.to_str().unwrap()).unwrap();
+        let output = std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg(format!("{command} && pwd -P"))
+            .current_dir(temp.path())
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap().trim_end(),
+            path.canonicalize().unwrap().to_str().unwrap()
+        );
+        assert!(!temp.path().join("injected").exists());
+    }
 
     fn parse(sequence: &str) -> Option<ReportedDirectory> {
         let params: Vec<&[u8]> = sequence.split(';').map(str::as_bytes).collect();

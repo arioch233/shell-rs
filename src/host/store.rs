@@ -149,6 +149,8 @@ impl HostStore {
         fn insert_group(draft: GroupDraft) -> GroupId;
         fn update_group(id: GroupId, draft: GroupDraft) -> bool;
         fn add_bookmark(id: HostId, side: BookmarkSide, path: &str) -> bool;
+        fn add_bookmark_with_alias(id: HostId, side: BookmarkSide, path: &str, alias: Option<&str>) -> bool;
+        fn set_bookmark_alias(id: HostId, side: BookmarkSide, path: &str, alias: Option<&str>) -> bool;
         fn remove_bookmark(id: HostId, side: BookmarkSide, path: &str) -> bool;
         fn move_bookmark(id: HostId, side: BookmarkSide, path: &str, to: usize) -> bool;
         fn insert_forward(draft: ForwardDraft) -> Option<ForwardId>;

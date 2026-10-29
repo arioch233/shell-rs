@@ -118,7 +118,7 @@ References are other records' ids. `null` means none.
 | `group` | `name` (not empty), `parent` (group or null), `sort_order` |
 | `credential` | `name` (not empty), `kind` (`password`, `key`, `agent`), `username`, `sort_order` |
 | `host` | `name`, `address` (not empty), `port` (1–65535), `group` (or null), `sort_order`, `protocol` (`ssh`, `telnet`), `telnet` {`user_prompt`, `pass_prompt`} when Telnet, `auth` (`password`, `no-password`, `credential`), `username` (null exactly when `auth` is `credential`), `credential` (set exactly then), `route` (`direct`, `jump`, `proxy`), `jumps` [host or null] when `jump`, `proxy` {`kind` (`http`, `socks5`), `host`, `port`, `username`} when `proxy`, `notes` |
-| `bookmark` | `host`, `path`, `sort_order`; its id is the first 16 bytes, hex, of SHA-256(`host` ‖ 0x00 ‖ `path`) |
+| `bookmark` | `host`, `path`, `sort_order`，可选 `alias`；其 id 为 SHA-256(`host` ‖ 0x00 ‖ `path`) 的前 16 字节的十六进制表示，别名不改变身份 |
 | `forward` | `host`, `name`, `kind` (`local`, `remote`, `dynamic`), `bind_host`, `bind_port`, `target_host` and `target_port` (null exactly when dynamic), `sort_order` |
 | `snippet_category` | `name` (not empty) |
 | `snippet` | `category` (or null), `name`, `command` (not empty), `scope` (`all`, `group`, `host`), `scope_id` (null exactly when `all`), `run_on_click` |
@@ -132,8 +132,9 @@ A secret's `value` is not empty and at most 64 KiB. A credential's secret is
 used only while the credential is of the kind that has it. Secrets always
 sync; there is no setting to keep them out.
 
-Every field listed is written, `null` where it has none: a record missing one
-is damaged, kept and passed on but not used.
+除 `bookmark.alias` 外，上表字段均须写入，没有值时写 `null`；缺少必需字段的记录保留并传递，但不使用
+
+`bookmark.alias` 是可选文本，缺失或 `null` 均表示没有别名，以兼容旧版本书签。没有别名时省略此字段；清空别名时移除已有字段，其余未知字段仍保留。应用保存时去除别名首尾空白，空文本按没有别名处理；别名仅用于显示，导航、去重及同步身份仍使用 `path`
 
 Not synced, each device's own: serial hosts (their port is this computer's);
 a host's detected system, last connection and sidebar tool; a group's expanded

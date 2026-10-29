@@ -124,10 +124,29 @@ pub enum ProxyKind {
 /// `bookmark_id(host, path)`, so two devices bookmarking the same folder
 /// make one record.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct BookmarkData {
     pub host: String,
     pub path: String,
     pub sort_order: i64,
+    /// 可选显示别名，旧记录缺失该字段时按无别名读取
+    pub alias: Option<String>,
+}
+
+impl BookmarkData {
+    pub fn new(host: impl Into<String>, path: impl Into<String>, sort_order: i64) -> Self {
+        Self {
+            host: host.into(),
+            path: path.into(),
+            sort_order,
+            alias: None,
+        }
+    }
+
+    pub fn with_alias(mut self, alias: Option<String>) -> Self {
+        self.alias = alias;
+        self
+    }
 }
 
 /// A port forwarding rule, through `host`. A dynamic one has no target.
@@ -266,6 +285,11 @@ pub(crate) fn parse(key: &RecordKey, data: &Map) -> Result<RecordData, String> {
             host: r.id("host")?.ok_or("a bookmark has no host")?,
             path: r.string("path")?,
             sort_order: r.order()?,
+            alias: if data.contains_key("alias") {
+                r.optional_string("alias")?
+            } else {
+                None
+            },
         }),
         Kind::Forward => RecordData::Forward(parse_forward(&r)?),
         Kind::SnippetCategory => RecordData::SnippetCategory(SnippetCategoryData {
@@ -448,7 +472,7 @@ fn known_fields(kind: &Kind) -> &'static [&'static str] {
             "proxy",
             "notes",
         ],
-        Kind::Bookmark => &["host", "path", "sort_order"],
+        Kind::Bookmark => &["host", "path", "sort_order", "alias"],
         Kind::Forward => &[
             "host",
             "name",
@@ -530,11 +554,18 @@ fn fields(data: &RecordData) -> Vec<(&'static str, Value)> {
             out.push(("notes", json!(host.notes)));
             out
         }
-        RecordData::Bookmark(bookmark) => vec![
-            ("host", json!(bookmark.host)),
-            ("path", json!(bookmark.path)),
-            ("sort_order", json!(bookmark.sort_order)),
-        ],
+        RecordData::Bookmark(bookmark) => {
+            let mut out = vec![
+                ("host", json!(bookmark.host)),
+                ("path", json!(bookmark.path)),
+                ("sort_order", json!(bookmark.sort_order)),
+            ];
+            // 无别名时保持旧记录的编码，清除别名时由 known_fields 去掉旧值
+            if let Some(alias) = &bookmark.alias {
+                out.push(("alias", json!(alias)));
+            }
+            out
+        }
         RecordData::Forward(forward) => vec![
             ("host", json!(forward.host)),
             ("name", json!(forward.name)),
@@ -748,6 +779,7 @@ pub(crate) mod tests {
                     host: "h1".into(),
                     path: "/var/log".into(),
                     sort_order: 0,
+                    alias: None,
                 }),
             ),
             (
@@ -966,5 +998,30 @@ pub(crate) mod tests {
         assert_ne!(bookmark_id("h1", "/var"), bookmark_id("h2", "/var"));
         assert_ne!(bookmark_id("h", "1/var"), bookmark_id("h1", "/var"));
         assert!(RecordKey::is_valid_id(&bookmark_id("h1", "/var")));
+    }
+
+    #[test]
+    fn bookmark_alias_is_optional_and_can_be_cleared_without_losing_unknown_fields() {
+        let key = RecordKey::new(Kind::Bookmark, bookmark_id("h1", "/var/log"));
+        let plain = RecordData::Bookmark(BookmarkData::new("h1", "/var/log", 3));
+        let legacy = write_into(&plain, None);
+        assert!(!legacy.contains_key("alias"));
+        assert_eq!(parse(&key, &legacy), Ok(plain.clone()));
+
+        let named = RecordData::Bookmark(
+            BookmarkData::new("h1", "/var/log", 3).with_alias(Some("日志".into())),
+        );
+        let mut written = write_into(&named, Some(&legacy));
+        assert_eq!(parse(&key, &written), Ok(named));
+        written.insert("future_field".into(), json!("preserved"));
+        let cleared = write_into(&plain, Some(&written));
+        assert!(!cleared.contains_key("alias"));
+        assert_eq!(cleared["future_field"], json!("preserved"));
+        assert_eq!(parse(&key, &cleared), Ok(plain.clone()));
+
+        written.insert("alias".into(), Value::Null);
+        assert_eq!(parse(&key, &written), Ok(plain));
+        written.insert("alias".into(), json!(42));
+        assert!(parse(&key, &written).is_err());
     }
 }

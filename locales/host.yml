@@ -623,6 +623,9 @@ host.store.not_saved.add_bookmark:
 host.store.not_saved.delete_bookmark:
   zh-CN: 删除书签未能保存到本地数据库：%{error}
   en: "Couldn’t delete the bookmark from the local database: %{error}"
+host.store.not_saved.bookmark_alias:
+  zh-CN: 书签别名未能保存到本地数据库：%{error}
+  en: "Couldn’t save the bookmark alias to the local database: %{error}"
 host.store.not_saved.bookmark_order:
   zh-CN: 调整书签顺序未能保存到本地数据库：%{error}
   en: "Couldn’t save the order of the bookmarks to the local database: %{error}"

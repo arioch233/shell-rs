@@ -191,6 +191,7 @@ fn not_saved(change: Change, error: &str) -> SharedString {
         Change::NewGroup => t!("host.store.not_saved.new_group", error = error),
         Change::SaveGroup => t!("host.store.not_saved.save_group", error = error),
         Change::AddBookmark => t!("host.store.not_saved.add_bookmark", error = error),
+        Change::BookmarkAlias => t!("host.store.not_saved.bookmark_alias", error = error),
         Change::DeleteBookmark => t!("host.store.not_saved.delete_bookmark", error = error),
         Change::BookmarkOrder => t!("host.store.not_saved.bookmark_order", error = error),
         Change::NewForward => t!("host.store.not_saved.new_forward", error = error),

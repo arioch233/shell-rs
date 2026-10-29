@@ -1,4 +1,31 @@
 _version: 2
+terminal.bookmarks.open:
+  zh-CN: 目录书签…
+  en: Folder bookmarks…
+terminal.bookmarks.title:
+  zh-CN: "目录书签 · %{name}"
+  en: "Folder bookmarks · %{name}"
+terminal.bookmarks.search:
+  zh-CN: 搜索别名或路径
+  en: Search alias or path
+terminal.bookmarks.hint:
+  zh-CN: 将 cd 命令填入终端，回车执行
+  en: Insert the cd command, then press Enter in the terminal
+terminal.bookmarks.empty:
+  zh-CN: 此主机还没有远程书签，请在文件侧栏或 SFTP 中添加
+  en: No remote bookmarks for this host. Add one in Files or SFTP.
+terminal.bookmarks.no_matches:
+  zh-CN: 没有匹配的目录书签
+  en: No matching folder bookmarks
+terminal.bookmarks.unsupported:
+  zh-CN: 目录跳转目前支持使用 POSIX shell 的 SSH 终端
+  en: Folder navigation currently supports SSH terminals using a POSIX shell
+terminal.bookmarks.expired:
+  zh-CN: 目标终端已关闭或重新连接，请重新选择目录
+  en: The target terminal closed or reconnected. Select the folder again.
+terminal.bookmarks.invalid_path:
+  zh-CN: 目录必须是绝对路径，且不能包含换行或控制字符
+  en: The folder must be an absolute path without line breaks or control characters
 
 # Remote terminal tab
 terminal.remote.label:

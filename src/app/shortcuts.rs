@@ -85,7 +85,16 @@ macro_rules! shortcut {
 }
 
 /// The shortcuts of 设置 › 键盘快捷键, in the order the page lists them.
-pub static SHORTCUTS: [Shortcut; 30] = [
+pub static SHORTCUTS: [Shortcut; 31] = [
+    shortcut!(
+        "terminal-bookmarks",
+        "app.shortcut.terminal_bookmarks",
+        Terminal,
+        TERMINAL,
+        "cmd-shift-j",
+        "ctrl-shift-j",
+        OpenTerminalBookmarks
+    ),
     shortcut!(
         "new-host",
         "app.shortcut.new_host",
@@ -1023,7 +1032,11 @@ fn file_list_key_bindings() -> Vec<KeyBinding> {
             // WinSCP's Ctrl+B already toggles the host panel here.
             bind(
                 &format!("{PRIMARY}-d"),
-                ExplorerCommand::AddBookmark { remote, path: None },
+                ExplorerCommand::AddBookmark {
+                    remote,
+                    path: None,
+                    alias: None,
+                },
                 context,
             ),
             bind("f2", ExplorerCommand::Rename { remote }, context),

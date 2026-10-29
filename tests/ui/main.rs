@@ -8,6 +8,7 @@
 mod support;
 
 mod analytics;
+mod bookmarks;
 mod cli;
 mod compose;
 mod connection;

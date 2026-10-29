@@ -63,6 +63,8 @@ gpui_kit::actions!(
         SelectAllTerminal,
         /// Open the active terminal's find bar, or select its query again.
         FindInTerminal,
+        /// 搜索当前远程终端所属主机的目录书签
+        OpenTerminalBookmarks,
         /// Focus the next match down (newer output) in the active terminal.
         FindNextInTerminal,
         /// Focus the next match up (older output) in the active terminal.
@@ -250,6 +252,8 @@ macro_rules! id_actions {
 }
 
 id_actions! {
+    /// 搜索指定终端的目录书签，右键菜单不会误用另一个标签
+    ShowTerminalBookmarks(RemoteTerminalId);
     /// Open a new terminal connection for a host.
     ConnectHost(HostId);
     /// Open a new SFTP tab for a host, like a new terminal connection.
@@ -507,6 +511,34 @@ pub struct EnterCommand {
     pub run: bool,
 }
 
+/// 将目录命令填入指定连接代次的终端，由用户回车执行
+#[derive(Action, Clone, PartialEq, Eq)]
+#[action(namespace = shellrs, no_json)]
+pub struct EnterTerminalDirectory {
+    terminal: RemoteTerminalId,
+    generation: u64,
+    path: String,
+}
+
+impl EnterTerminalDirectory {
+    pub fn new(terminal: RemoteTerminalId, generation: u64, path: String) -> Self {
+        Self {
+            terminal,
+            generation,
+            path,
+        }
+    }
+    pub fn terminal(&self) -> RemoteTerminalId {
+        self.terminal
+    }
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+}
+
 /// One tab of the center area, by the identity of what it shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CenterTab {
@@ -756,6 +788,17 @@ pub enum ExplorerCommand {
     /// Bookmark `path`, or the pane's directory when `None`.
     AddBookmark {
         remote: bool,
+        path: Option<String>,
+        alias: Option<String>,
+    },
+    /// 设置书签别名，留空恢复显示路径
+    SetBookmarkAlias {
+        remote: bool,
+        path: String,
+        alias: Option<String>,
+    },
+    /// 文件侧栏的目录或书签进入其所属终端，None 表示当前目录
+    EnterTerminalDirectory {
         path: Option<String>,
     },
     RemoveBookmark {

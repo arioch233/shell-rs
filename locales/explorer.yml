@@ -1,4 +1,7 @@
 _version: 2
+explorer.command.enter_terminal:
+  zh-CN: 在终端进入
+  en: Go there in terminal
 
 explorer.drag.start_failed:
   zh-CN: "无法拖出下载：%{error}"
@@ -607,6 +610,15 @@ explorer.open_directory.choose:
 explorer.bookmarks.none:
   zh-CN: 暂无书签
   en: No bookmarks
+explorer.bookmarks.alias:
+  zh-CN: 别名（可选）
+  en: Alias (optional)
+explorer.bookmarks.alias_placeholder:
+  zh-CN: 留空使用路径
+  en: Leave blank to use the path
+explorer.bookmarks.save_alias:
+  zh-CN: 保存别名
+  en: Save alias
 
 explorer.command.edit:
   zh-CN: 编辑

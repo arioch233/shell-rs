@@ -351,6 +351,7 @@ mod tests {
             host: "h".into(),
             path: "/".into(),
             sort_order: 0,
+            alias: None,
         });
         let records = set([
             deleted(Kind::Host, "h", version(5, 'b')),

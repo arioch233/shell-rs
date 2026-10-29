@@ -13,6 +13,7 @@ use gpui_kit::*;
 use crate::app::{
     CatalogIcon, CenterTab, CloseTerminal, ConnectHost, CopyHostAddress, CopyHostId,
     DisconnectTerminal, EditHost, OpenExplorer, ReconnectTerminal, RenameTerminal, SendBreak,
+    ShowTerminalBookmarks,
 };
 use crate::connection::{ConnectionPrompt, ConnectionPromptReply};
 use crate::host::{ConnectionState, Host, HostConnection, HostId, HostOs, HostStore, ProtocolKind};
@@ -463,6 +464,11 @@ fn remote_menu_items(
         );
         menu.when(protocol.is_ssh(), |menu| {
             menu.menu_with_icon(
+                t!("terminal.bookmarks.open"),
+                Icon::new(CatalogIcon::Bookmark),
+                Box::new(ShowTerminalBookmarks(id)),
+            )
+            .menu_with_icon(
                 t!("terminal.remote.open_sftp"),
                 Icon::new(CatalogIcon::FolderTree),
                 Box::new(OpenExplorer(host_id)),

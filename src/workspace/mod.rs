@@ -3,6 +3,7 @@
 //! the center shows while no tab is open.
 
 mod analytics;
+mod bookmarks;
 mod cli_changes;
 mod compose;
 mod compose_pane;

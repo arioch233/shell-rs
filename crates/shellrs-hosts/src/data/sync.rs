@@ -468,11 +468,10 @@ impl HostData {
                 let meta = self.bookmark_meta(*host, *side, path);
                 records.push(LocalRecord {
                     id: sync::bookmark_id(&public_id, path),
-                    data: RecordData::Bookmark(sync::BookmarkData {
-                        host: public_id.clone(),
-                        path: path.clone(),
-                        sort_order: meta.sort_order,
-                    }),
+                    data: RecordData::Bookmark(
+                        sync::BookmarkData::new(public_id.clone(), path.clone(), meta.sort_order)
+                            .with_alias(meta.alias),
+                    ),
                     edited_ms: meta.edited_ms,
                 });
             }
@@ -1110,6 +1109,7 @@ impl HostData {
                     .entry((host_id, side, data.path.clone()))
                     .or_default();
                 meta.sort_order = data.sort_order;
+                meta.alias = crate::bookmark::normalize_alias(data.alias.as_deref());
                 self.sort_bookmarks(host_id, side);
                 writes.push(Write::Bookmark(host_id, data.path.clone()));
             }
@@ -1442,6 +1442,7 @@ impl HostData {
                     path,
                     meta.sort_order,
                     meta.edited_ms,
+                    meta.alias.as_deref(),
                 )
             }
             Write::DeleteBookmark(host, path) => {
@@ -1783,6 +1784,60 @@ mod tests {
         // goes out again, exactly.
         assert_eq!(a.sync(&vault, &keys), 0);
         assert_eq!(b.sync(&vault, &keys), 0);
+    }
+
+    #[test]
+    fn bookmark_alias_edits_and_clears_sync_without_changing_identity() {
+        let (vault, keys) = vault();
+        let mut a = Device::new('a');
+        let mut b = Device::new('b');
+        let host = a.store.insert(HostDraft::new(
+            "web",
+            "10.0.0.1",
+            22,
+            "root",
+            AuthKind::NoPassword,
+            None,
+        ));
+        a.store
+            .add_bookmark_with_alias(host, BookmarkSide::Remote, "/var/log", Some("日志"));
+        a.store
+            .add_bookmark_with_alias(host, BookmarkSide::Local, "/tmp", Some("本地"));
+        a.sync(&vault, &keys);
+        b.sync(&vault, &keys);
+        let other = b.store.hosts()[0].id;
+        assert_eq!(
+            b.store
+                .bookmark_meta(other, BookmarkSide::Remote, "/var/log")
+                .alias
+                .as_deref(),
+            Some("日志")
+        );
+        assert!(b.store.bookmarks(other, BookmarkSide::Local).is_empty());
+        b.store
+            .set_bookmark_alias(other, BookmarkSide::Remote, "/var/log", Some("系统日志"));
+        b.sync(&vault, &keys);
+        a.sync(&vault, &keys);
+        assert_eq!(
+            a.store
+                .bookmark_meta(host, BookmarkSide::Remote, "/var/log")
+                .alias
+                .as_deref(),
+            Some("系统日志")
+        );
+        a.store
+            .set_bookmark_alias(host, BookmarkSide::Remote, "/var/log", None);
+        a.sync(&vault, &keys);
+        b.sync(&vault, &keys);
+        assert_eq!(b.store.bookmarks(other, BookmarkSide::Remote), ["/var/log"]);
+        assert_eq!(
+            b.store
+                .bookmark_meta(other, BookmarkSide::Remote, "/var/log")
+                .alias,
+            None
+        );
+        let db = HostDatabase::open(&b.data.path().join("shellrs.db")).unwrap();
+        assert_eq!(db.load().unwrap().bookmarks[0].5, None);
     }
 
     #[test]

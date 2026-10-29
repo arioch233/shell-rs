@@ -231,6 +231,11 @@ pub fn quote_word(word: &str) -> String {
     quote_word_for(word, QUOTING)
 }
 
+/// 远端 POSIX shell 的单个参数，不受客户端操作系统影响
+pub(crate) fn quote_posix_word(word: &str) -> String {
+    quote_word_for(word, Quoting::Posix)
+}
+
 fn quote_word_for(word: &str, quoting: Quoting) -> String {
     match quoting {
         Quoting::Posix => {

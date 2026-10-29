@@ -736,13 +736,28 @@ impl ExplorerPanel {
                 }
             }
             ExplorerCommand::Refresh { remote } => self.reload(*remote, window, cx),
-            ExplorerCommand::AddBookmark { remote, path } => {
+            ExplorerCommand::AddBookmark {
+                remote,
+                path,
+                alias,
+            } => {
                 let path = path
                     .clone()
                     .unwrap_or_else(|| self.pane(*remote).read(cx).path());
                 let (id, side) = (self.host_id, BookmarkSide::from_remote(*remote));
-                self.store
-                    .update(cx, |store, cx| store.add_bookmark(id, side, &path, cx));
+                self.store.update(cx, |store, cx| {
+                    store.add_bookmark_with_alias(id, side, &path, alias.as_deref(), cx)
+                });
+            }
+            ExplorerCommand::SetBookmarkAlias {
+                remote,
+                path,
+                alias,
+            } => {
+                let (id, side) = (self.host_id, BookmarkSide::from_remote(*remote));
+                self.store.update(cx, |store, cx| {
+                    store.set_bookmark_alias(id, side, path, alias.as_deref(), cx)
+                });
             }
             ExplorerCommand::RemoveBookmark { remote, path } => {
                 let (id, side) = (self.host_id, BookmarkSide::from_remote(*remote));
@@ -976,7 +991,7 @@ impl ExplorerPanel {
                 }
             }
             ExplorerCommand::ClearFinishedTransfers => self.queue.clear_finished(),
-            ExplorerCommand::CloseConfirmed => {}
+            ExplorerCommand::CloseConfirmed | ExplorerCommand::EnterTerminalDirectory { .. } => {}
         }
         self.finish_file_promises();
         self.sync_available(cx);
@@ -1343,7 +1358,13 @@ mod tests {
         }));
         assert!(!needs_connection(&ExplorerCommand::AddBookmark {
             remote: true,
-            path: None
+            path: None,
+            alias: None,
+        }));
+        assert!(!needs_connection(&ExplorerCommand::SetBookmarkAlias {
+            remote: true,
+            path: "/var/log".into(),
+            alias: Some("日志".into()),
         }));
         assert!(!needs_connection(&ExplorerCommand::Reconnect));
     }

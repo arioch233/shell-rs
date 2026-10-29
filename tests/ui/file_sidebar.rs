@@ -14,6 +14,75 @@ use shellrs::explorer::ExplorerPanel;
 const FILES: u64 = 1;
 const REMOTE_FILE: &str = "/home/tester/文件 甲.txt";
 
+#[gpui_kit::test]
+async fn file_sidebar_bookmarks_prepare_cd_in_their_own_terminal(cx: &mut TestAppContext) {
+    use shellrs::host::BookmarkSide;
+    let fixture = open(cx, FakeSftpProvider::default());
+    show_files(cx, &fixture, INITIAL_WEB_TERMINAL, FILES).await;
+    cx.update(|cx| {
+        fixture
+            .workspace
+            .read(cx)
+            .store()
+            .clone()
+            .update(cx, |store, cx| {
+                store.add_bookmark_with_alias(
+                    HostId(WEB_01),
+                    BookmarkSide::Remote,
+                    "/var/log",
+                    Some("系统日志"),
+                    cx,
+                );
+            });
+    });
+    let before = fixture.terminals.written_text();
+    in_frame(cx, fixture.handle, |window, cx| {
+        window
+            .within(("remote-pane", FILES))
+            .click("enter-terminal-directory", cx);
+    });
+    cx.wait_for(fixture.handle.into(), Duration::from_secs(2), |_, _| {
+        fixture.terminals.written_text() != before
+    })
+    .await;
+    assert_eq!(
+        &fixture.terminals.written_text()[before.len()..],
+        "\x05\x15cd -- /home/tester"
+    );
+    in_frame(cx, fixture.handle, |window, cx| {
+        window.within(("remote-pane", FILES)).click("bookmarks", cx);
+    });
+    in_frame(cx, fixture.handle, |window, cx| {
+        window.click("bookmark:/var/log", cx)
+    });
+    let before = fixture.terminals.written_text();
+    in_frame(cx, fixture.handle, |window, cx| {
+        window.click("bookmark-enter-terminal", cx)
+    });
+    cx.wait_for(fixture.handle.into(), Duration::from_secs(2), |_, _| {
+        fixture.terminals.written_text() != before
+    })
+    .await;
+    assert_eq!(
+        &fixture.terminals.written_text()[before.len()..],
+        "\x05\x15cd -- /var/log"
+    );
+    in_frame(cx, fixture.handle, |window, _| {
+        assert!(window.try_find("open-directory-path").is_none());
+        assert_eq!(
+            window.find(("terminal", INITIAL_WEB_TERMINAL)).focused(),
+            Some(true)
+        );
+        assert_eq!(
+            window
+                .within(("remote-pane", FILES))
+                .find("remote-path")
+                .value(),
+            Some("/home/tester")
+        );
+    });
+}
+
 struct Fixture {
     handle: WindowHandle<Root>,
     workspace: Entity<Workspace>,
