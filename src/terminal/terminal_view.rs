@@ -1534,7 +1534,9 @@ impl Element for TerminalElement {
             cell_width.as_f32().round().clamp(1., u16::MAX as f32) as u16,
             line_height.as_f32().round().clamp(1., u16::MAX as f32) as u16,
         );
-        if requested_size != self.requested_size {
+        // 拖动分隔线时只裁剪显示区域，松手后的刷新再同步最终尺寸
+        // 中间的极窄网格会让提示符折行，与远端重绘交错后留下重复内容
+        if requested_size != self.requested_size && !cx.has_active_drag() {
             let terminal = self.view.clone();
             cx.defer(move |cx| {
                 terminal.update(cx, |terminal, cx| terminal.resize(requested_size, cx));

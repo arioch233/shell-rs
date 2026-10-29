@@ -12,6 +12,8 @@ pub enum FakeBehavior {
     ReportsLatency(Latency),
     /// Prints this after its prompt line, as a program would.
     Prints(&'static str),
+    /// 模拟 shell 收到尺寸变化后清除当前行并重绘提示符
+    RedrawPrompt,
     /// A local shell in this folder, as this computer tells.
     InFolder(&'static str),
     /// Answers what `exec --terminal` types the way a shell whose program
@@ -28,6 +30,8 @@ pub enum FakeBehavior {
 
 /// What lrzsz's `rz` prints first: its greeting, then ZRINIT.
 pub const RZ_STARTS: &[u8] = b"rz waiting to receive.**\x18B0100000023be50\r\x8a\x11";
+
+const RESIZE_PROMPT: &[u8] = b"(base) \x1b[01;32muser@development\x1b[0m:~$ ";
 
 #[derive(Default)]
 pub struct FakeTerminalFactory {
@@ -240,6 +244,9 @@ impl TerminalTransport for FakeTerminalTransport {
         if let FakeBehavior::Prints(text) = self.behavior {
             events.send_blocking(TerminalTransportEvent::Output(text.as_bytes().to_vec()))?;
         }
+        if matches!(self.behavior, FakeBehavior::RedrawPrompt) {
+            events.send_blocking(TerminalTransportEvent::Output(RESIZE_PROMPT.to_vec()))?;
+        }
         if matches!(self.behavior, FakeBehavior::ExitFirst) && self.run == 1 {
             events.send_blocking(TerminalTransportEvent::Exited {
                 code: 9,
@@ -279,6 +286,11 @@ impl TerminalTransport for FakeTerminalTransport {
                         .push(bytes);
                 }
                 TerminalTransportCommand::Resize(size) => {
+                    if matches!(self.behavior, FakeBehavior::RedrawPrompt) {
+                        events.send_blocking(TerminalTransportEvent::Output(
+                            [b"\r\x1b[K".as_slice(), RESIZE_PROMPT].concat(),
+                        ))?;
+                    }
                     self.resizes
                         .lock()
                         .unwrap_or_else(|error| error.into_inner())

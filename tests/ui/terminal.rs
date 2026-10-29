@@ -747,6 +747,134 @@ async fn cjk_input_is_sent_once_and_resize_commands_are_deduplicated(cx: &mut Te
     assert!(resizes.windows(2).all(|sizes| sizes[0] != sizes[1]));
 }
 
+#[gpui_kit::test]
+async fn sidebar_drag_commits_terminal_size_after_release_without_duplicate_prompts(
+    cx: &mut TestAppContext,
+) {
+    use gpui_kit::{MouseDownEvent, MouseUpEvent};
+    let factory = Arc::new(FakeTerminalFactory {
+        behavior: FakeBehavior::RedrawPrompt,
+        ..Default::default()
+    });
+    let (handle, workspace) =
+        open_workspace_with_remote_factory(cx, HostStore::seed(), factory.clone());
+    in_frame(cx, handle, |window, cx| {
+        window.click(("terminal-tab", INITIAL_WEB_TERMINAL), cx)
+    });
+    in_frame(cx, handle, |window, cx| window.click("tool-snippets", cx));
+    let terminal = cx.update(|cx| {
+        workspace
+            .read(cx)
+            .remote_terminal(RemoteTerminalId(INITIAL_WEB_TERMINAL))
+            .unwrap()
+            .read(cx)
+            .terminal()
+            .clone()
+    });
+    cx.wait_for(handle.into(), Duration::from_secs(2), |_, cx| {
+        terminal
+            .read(cx)
+            .screen_text(cx)
+            .contains("user@development")
+    })
+    .await;
+
+    // 两侧分隔线都经过极窄位置再返回，覆盖同一手势内的反复移动
+    for right in [true, false] {
+        let before = cx.update(|cx| terminal.read(cx).status(cx));
+        cx.wait_for(handle.into(), Duration::from_secs(2), |_, _| {
+            factory
+                .resizes
+                .lock()
+                .unwrap()
+                .last()
+                .is_some_and(|size| size.columns() == before.columns())
+        })
+        .await;
+        let resize_count = factory.resizes.lock().unwrap().len();
+        let from = in_frame(cx, handle, |window, cx| {
+            let bounds = if right {
+                window.find(("tool-sidebar", INITIAL_WEB_TERMINAL)).bounds()
+            } else {
+                window.find("host-tree").bounds()
+            };
+            let from = point(
+                if right {
+                    bounds.left() + px(2.)
+                } else {
+                    bounds.right() - px(2.)
+                },
+                bounds.center().y,
+            );
+            window.dispatch_event(
+                MouseDownEvent {
+                    button: MouseButton::Left,
+                    position: from,
+                    modifiers: Default::default(),
+                    click_count: 1,
+                    first_mouse: false,
+                }
+                .to_platform_input(),
+                cx,
+            );
+            from
+        });
+        let direction = if right { -1. } else { 1. };
+        for distance in [6., 600., 40., 580., 48.] {
+            in_frame(cx, handle, |window, cx| {
+                window.dispatch_event(
+                    MouseMoveEvent {
+                        position: from + point(px(direction * distance), px(0.)),
+                        pressed_button: Some(MouseButton::Left),
+                        modifiers: Default::default(),
+                    }
+                    .to_platform_input(),
+                    cx,
+                );
+                window.render_frame(cx);
+                assert!(cx.has_active_drag());
+            });
+            cx.update(|cx| {
+                let during = terminal.read(cx).status(cx);
+                assert_eq!(
+                    (during.columns(), during.rows()),
+                    (before.columns(), before.rows())
+                );
+            });
+            assert_eq!(factory.resizes.lock().unwrap().len(), resize_count);
+        }
+        in_frame(cx, handle, |window, cx| {
+            window.dispatch_event(
+                MouseUpEvent {
+                    button: MouseButton::Left,
+                    position: from + point(px(direction * 48.), px(0.)),
+                    modifiers: Default::default(),
+                    click_count: 1,
+                }
+                .to_platform_input(),
+                cx,
+            );
+        });
+        cx.wait_for(handle.into(), Duration::from_secs(2), |window, cx| {
+            window.render_frame(cx);
+            let after = terminal.read(cx).status(cx);
+            after.columns() != before.columns()
+                && factory
+                    .resizes
+                    .lock()
+                    .unwrap()
+                    .last()
+                    .is_some_and(|size| size.columns() == after.columns())
+        })
+        .await;
+        assert_eq!(factory.resizes.lock().unwrap().len(), resize_count + 1);
+        cx.update(|cx| {
+            let screen = terminal.read(cx).screen_text(cx);
+            assert_eq!(screen.matches("(base)").count(), 1, "{screen}");
+        });
+    }
+}
+
 /// Open a local terminal on `factory` and wait for the fake shell's banner.
 async fn open_running_local_terminal(
     cx: &mut TestAppContext,
