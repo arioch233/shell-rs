@@ -4,8 +4,6 @@
 
 <h1 align="center">ShellRS</h1>
 
-> **定制 Fork · 2026-10-25**：本仓库由 [arioch233](https://github.com/arioch233/shell-rs) 维护，基于 [since2006/shell-rs](https://github.com/since2006/shell-rs)，保留原作者版权及 GPLv3 许可证。主要修改为统一资源监控（Rockchip、Jetson、Ascend）、按设备展示硬件信息、授权采集及 SFTP 系统拖出下载。本 Fork 当前仅提供源码构建，原作者安装包不包含这些定制。开发与上游同步见 [Fork 维护指南](docs/fork-maintenance.zh.md)。
-
 <p align="center">
   A high-performance, native, cross-platform SSH client written in Rust, with a GPU-rendered interface: Xshell-style host management, WinSCP-style SFTP and port forwarding, all in one window.
 </p>
@@ -20,6 +18,12 @@
 </p>
 
 <p align="center"><b>English</b> | <a href="README.zh-CN.md">简体中文</a></p>
+
+> **Custom fork · updated 2026-10-30**
+>
+> Maintained by [arioch233](https://github.com/arioch233/shell-rs), based on [since2006/shell-rs](https://github.com/since2006/shell-rs), with the original copyright notices and [GPLv3 license](LICENSE) preserved. Adds unified monitoring for Rockchip, Jetson and Ascend devices, restricted read-only access for monitoring, macOS drag-out downloads, bookmark aliases and terminal directory navigation. See [Fork features](docs/fork-features.md) for details and platform support.
+>
+> This fork is currently available as source only; upstream installers do not include these additions. See [Building from source](#building-from-source) and the [Fork maintenance guide](docs/fork-maintenance.zh.md) (in Chinese).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/main-dark.png">
@@ -54,14 +58,14 @@ Hosts, groups, credentials and forwarding rules live in a local SQLite database.
 **Right sidebar tools**
 
 - They follow the current remote terminal and read and run on that terminal's own connection, with no second login. ⌘⌥B (Ctrl+Alt+B elsewhere) shows or hides them.
-- System monitor: system details, CPU (per core too), memory, network rates and disk use, refreshed every 2 seconds.
+- Resource monitor: Overview, Hardware and Processes pages combine system metrics with device-specific GPU/NPU and media-engine data. Hardware cards appear only for detected capabilities; see [Fork features](docs/fork-features.md).
 - Network connections, processes and services: search and filter, process details, ending processes, starting, stopping and restarting systemd services, switching them on at boot, and their logs. These three and the monitor are for Linux only.
 - Docker: containers grouped by compose project, with start, stop, restart, details and logs, plus volumes, images and networks. When not root, passwordless sudo is used (for services as well).
 - Kubernetes: select a cluster from the host's kubeconfig, filter resources by namespace, inspect workloads and services, browse related pods, search container logs and copy kubectl commands. Off by default; turn it on in the settings. See the [user manual](docs/manual.md#kubernetes).
 - Command history reads `~/.bash_history` on the host, and snippets, shared by every host, can be sorted into categories; click one to type it into the terminal, or run it straight away.
 - tmux: the host's tmux sessions, with the one the terminal is in marked; start one, attach the terminal to one or detach it, rename and end them.
 - Files: a single remote file list beside the terminal, on an SFTP channel of the terminal's own connection, following the terminal's current folder. Browse, edit and preview, drop files in to upload, and download to your Downloads folder.
-- GPU/NPU: an AI host's NVIDIA GPUs and Huawei Ascend NPUs, laid out for eight: totals, each device's utilization, memory, temperature, power and health, and the compute processes, which you can end. Off by default; turn it on in the settings, where the other tools can be hidden too.
+- GPU/NPU monitoring is part of the resource monitor: per-device utilization, memory, temperature, power and health where available, with compute processes on the Processes page. The resource monitor is shown by default and can be hidden in the settings.
 
 **SFTP**
 
@@ -124,7 +128,7 @@ Hosts, groups, credentials and forwarding rules live in a local SQLite database.
 
 ## Download
 
-> 以下下载、签名与自动更新说明仅适用于原作者版本；本 Fork 请按下文从源码构建。
+> The downloads, signatures and automatic updates below apply to the upstream version. To use this fork's additions, [build from source](#building-from-source).
 
 Download from [shellrs.com/download](https://shellrs.com/download), which offers the package for your system, or from GitHub [Releases](https://github.com/since2006/shell-rs/releases). Betas are marked Pre-release there; to get new features early, switch the update channel to Beta in Settings › About.
 
@@ -176,8 +180,10 @@ The first build compiles the whole GPUI stack and takes a while. See [developmen
 
 ## Documentation
 
-Apart from the user manual and the changelog, the documentation is in Chinese for now:
+The fork feature overview, user manual and changelog are available in English and Simplified Chinese. The development, release and fork maintenance guides are currently in Chinese:
 
+- [Fork features](docs/fork-features.md): additions to upstream, supported devices and current limits
+- [Fork maintenance](docs/fork-maintenance.zh.md): branches, upstream merges and source builds
 - [User manual](docs/manual.md): every feature in detail, with shortcuts
 - [Development](docs/development.md): building, testing, the data directory
 - [Releasing](docs/release.md): packaging, signing and publishing updates
